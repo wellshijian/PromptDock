@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速节点 CN", "https://ghproxy.cn/"),
@@ -2304,9 +2304,13 @@ class UpdateDialog(QDialog):
             QPushButton#PrimaryBtn:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #988bfb, stop:1 #7a6bf0);
             }
-            QPushButton:disabled {
+            QPushButton:disabled,
+            QPushButton#PrimaryBtn:disabled {
+                background: #2b2d42;
                 background-color: #2b2d42;
                 color: #6c7086;
+                border: 1px solid #3b3d54;
+                font-weight: normal;
             }
             QProgressBar {
                 border: none;
@@ -2382,6 +2386,7 @@ class UpdateDialog(QDialog):
     def start_check(self):
         self.recheck_btn.setEnabled(False)
         self.sync_btn.setEnabled(False)
+        self.sync_btn.setText("检测中...")
         self.progress_bar.setVisible(False)
         self.status_lbl.setText("正在通过国内免梯子高速通道检测最新版本...")
         self.status_lbl.setStyleSheet("color: #89b4fa; font-size: 13px; font-weight: bold;")
@@ -2396,6 +2401,8 @@ class UpdateDialog(QDialog):
 
     def _on_check_failed(self, err: str):
         self.recheck_btn.setEnabled(True)
+        self.sync_btn.setEnabled(False)
+        self.sync_btn.setText("暂不可更新")
         self.status_lbl.setText(f"❌ {err}")
         self.status_lbl.setStyleSheet("color: #f38ba8; font-size: 13px; font-weight: bold;")
 
@@ -2408,10 +2415,12 @@ class UpdateDialog(QDialog):
         if info.get("has_update"):
             self.status_lbl.setText(f"🎉 发现新版本 v{latest}！（当前 v{APP_VERSION} · {node}）")
             self.status_lbl.setStyleSheet("color: #a6e3a1; font-size: 13px; font-weight: bold;")
+            self.sync_btn.setText("⚡ 立即同步更新")
             self.sync_btn.setEnabled(True)
         else:
             self.status_lbl.setText(f"✓ 当前已是最新版本 v{APP_VERSION}（检测通道：{node}）")
             self.status_lbl.setStyleSheet("color: #a6e3a1; font-size: 13px; font-weight: bold;")
+            self.sync_btn.setText("✓ 已是最新版")
             self.sync_btn.setEnabled(False)
 
     def start_download(self):
@@ -4226,11 +4235,9 @@ class MediaExtractorDialog(QDialog):
             self._save_my_pos()
 
     def close_cleanly(self):
-        """仅关闭视频提取器本身（不自动弹出主卡片界面），若主界面正悬浮也一并隐藏"""
+        """仅关闭视频提取器本身，不影响主卡片原有显示/隐藏状态（与任务排期表一致）"""
         self._save_my_pos()
         self.hide()
-        if self.parent() and self.parent().isVisible() and not getattr(self.parent(), "_is_edge_hidden", False):
-            self.parent().hide()
 
     def close_and_return_to_main(self):
         """仅在用户主动点击左上角「← 返回卡片」时原位回到主窗口"""
@@ -6243,9 +6250,6 @@ class MainWindow(QMainWindow):
             was_main_visible = self.isVisible() and not getattr(self, "_is_edge_hidden", False)
             main_pos = self.pos()
             main_w = self.width()
-            if was_main_visible:
-                _save_window_pos(self, self.settings, "window_x", "window_y")
-                self.hide()
             if not self._media_extractor.isVisible():
                 self._media_extractor.clear_all()
             if was_main_visible:

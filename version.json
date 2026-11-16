@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "notes": "PromptDock 首个 GitHub 正式版：\n1. 新增应用内在线检查更新与国内免梯子多节点高速同步升级（支持 SHA-256 安全校验与自动覆盖重启）\n2. 悬浮提示词卡片 + 分组/置顶/拖拽排序 + 草稿纸 + Cloudflare 云端同步\n3. 视频无水印提取（支持单条/批量解析、一键批量下载及 TLS 一键修复）\n4. 任务排期表（完成自动归位、快捷键呼出原位记忆）",
-  "sha256": "6e76e655595ace8d19ecd3a6a8554299c4283902b5436e7a32a954d3acfc3e9a",
+  "version": "1.0.1",
+  "notes": "PromptDock v1.0.1 优化更新：\\n1. 修复检查更新弹窗在当前已是最新版时按钮仍显示高亮紫色的样式问题\\n2. 优化视频无水印提取窗口关闭行为，与任务排期表/云端同步保持一致（从主卡片打开时关闭保留原卡片，快捷键呼出时关闭不弹主卡片）",
+  "sha256": "c6858e65589864d6745358d8d5bcb5330a7c37b59227f7b696ca5e2655bfa16a",
   "download_url": "https://github.com/wellshijian/PromptDock/releases/latest/download/PromptDock.exe",
-  "published_at": "2026-11-16T15:08:49+08:00"
+  "published_at": "2026-11-16T15:28:37+08:00"
 }
