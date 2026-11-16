@@ -66,9 +66,14 @@ jobs:
             $releaseExists = $false
           }
 
+          $assets = @("dist/PromptDock.exe", "PromptDock_绿色便携版.zip", "version.json")
+          if (Test-Path "PromptDock_Setup.exe") {
+            $assets = @("PromptDock_Setup.exe") + $assets
+          }
+
           if ($releaseExists) {
-            gh release upload $tag dist/PromptDock.exe PromptDock_绿色便携版.zip version.json --clobber --repo ${{ github.repository }}
+            gh release upload $tag @assets --clobber --repo ${{ github.repository }}
             gh release edit $tag --title "PromptDock $tag" --notes "$notes" --latest --repo ${{ github.repository }}
           } else {
-            gh release create $tag dist/PromptDock.exe PromptDock_绿色便携版.zip version.json --title "PromptDock $tag" --notes "$notes" --latest --repo ${{ github.repository }}
+            gh release create $tag @assets --title "PromptDock $tag" --notes "$notes" --latest --repo ${{ github.repository }}
           }

@@ -18,6 +18,8 @@ SPEC_FILE = os.path.join(ROOT_DIR, "PromptDock.spec")
 VERSION_FILE = os.path.join(ROOT_DIR, "version.json")
 DIST_EXE = os.path.join(ROOT_DIR, "dist", "PromptDock.exe")
 PORTABLE_ZIP = os.path.join(ROOT_DIR, "PromptDock_绿色便携版.zip")
+ISS_FILE = os.path.join(ROOT_DIR, "installer.iss")
+SETUP_EXE = os.path.join(ROOT_DIR, "PromptDock_Setup.exe")
 GITHUB_REPO = "wellshijian/PromptDock"
 
 
@@ -82,6 +84,25 @@ def build_portable_zip():
     print(f"[build] Portable zip created: {PORTABLE_ZIP} ({os.path.getsize(PORTABLE_ZIP)} bytes)")
 
 
+def build_setup_installer(version: str):
+    candidates = [
+        shutil.which("ISCC"),
+        r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        r"C:\Program Files\Inno Setup 6\ISCC.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Inno Setup 6\ISCC.exe"),
+    ]
+    iscc = next((p for p in candidates if p and os.path.exists(p)), None)
+    if not iscc or not os.path.exists(ISS_FILE):
+        print("[build] ISCC.exe not found, skipping Setup installer build.")
+        return False
+    print(f"[build] Building Setup installer via {iscc}...")
+    res = subprocess.run([iscc, f"/DMyAppVersion={version}", ISS_FILE], cwd=ROOT_DIR)
+    if res.returncode != 0 or not os.path.exists(SETUP_EXE):
+        raise RuntimeError("Inno Setup 安装包编译失败")
+    print(f"[build] Setup installer created: {SETUP_EXE} ({os.path.getsize(SETUP_EXE)} bytes)")
+    return True
+
+
 def update_version_json(version: str, sha256: str, notes: str = None):
     existing = {}
     if os.path.exists(VERSION_FILE):
@@ -121,6 +142,7 @@ def main():
     if not args.skip_build:
         build_executable()
         build_portable_zip()
+        build_setup_installer(target_ver)
         sha = compute_sha256(DIST_EXE)
         update_version_json(target_ver, sha, notes=args.notes)
     else:
