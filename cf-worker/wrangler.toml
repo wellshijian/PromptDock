@@ -1,0 +1,12 @@
+name = "promptdock-api"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[assets]
+directory = "./public"
+
+# 数据库绑定
+[[d1_databases]]
+binding = "DB"
+database_name = "promptdock-db"
+database_id = "ce7e0e9c-3c07-4b4e-8d4a-7a55041754d0"

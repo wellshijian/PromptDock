@@ -1,0 +1,74 @@
+name: PromptDock 自动构建与发布
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "发布版本号（留空则读取 version.json）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: 拉取最新源码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 3.11 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 安装项目依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 确定发布版本并执行编译打包
+        shell: pwsh
+        run: |
+          $tagVer = ""
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $tagVer = "${{ github.ref_name }}".TrimStart("v", "V")
+          } elseif ("${{ github.event.inputs.version }}") {
+            $tagVer = "${{ github.event.inputs.version }}".TrimStart("v", "V")
+          }
+          if ($tagVer) {
+            python scripts/build_release.py --version $tagVer
+          } else {
+            python scripts/build_release.py
+          }
+
+      - name: 发布 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $meta = Get-Content version.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $ver = $meta.version
+          $tag = "v$ver"
+          $notes = $meta.notes
+
+          $releaseExists = $true
+          try {
+            gh release view $tag --repo ${{ github.repository }} | Out-Null
+          } catch {
+            $releaseExists = $false
+          }
+
+          if ($releaseExists) {
+            gh release upload $tag dist/PromptDock.exe PromptDock_绿色便携版.zip version.json --clobber --repo ${{ github.repository }}
+            gh release edit $tag --title "PromptDock $tag" --notes "$notes" --latest --repo ${{ github.repository }}
+          } else {
+            gh release create $tag dist/PromptDock.exe PromptDock_绿色便携版.zip version.json --title "PromptDock $tag" --notes "$notes" --latest --repo ${{ github.repository }}
+          }

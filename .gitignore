@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.bak
+*.bak_*
+build/
+dist/
+*.log
+clean_check.png
+test_minimal_avatar_ui.py
+PromptDock_绿色便携版.zip
+.vscode/
+.idea/
