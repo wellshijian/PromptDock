@@ -57,16 +57,13 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
-    ("极速节点 CN", "https://ghproxy.cn/"),
+    ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
+    ("GitHub 官方通道", ""),
     ("加速节点 A", "https://gh-proxy.com/"),
-    ("加速节点 CDN", "https://cdn.gh-proxy.com/"),
-    ("加速节点 HK", "https://hk.gh-proxy.com/"),
-    ("加速节点 Wget", "https://wget.la/"),
     ("加速节点 Edge", "https://edgeone.gh-proxy.com/"),
-    ("GitHub 官方直连", ""),
 ]
 WINDOW_W = 380
 WINDOW_H = 520
@@ -2143,40 +2140,66 @@ class AppUpdateEngine:
 
     @classmethod
     def download_update(cls, download_url: str, expected_sha256: str = "", progress_cb=None) -> str:
-        """通过多条国内镜像加速节点下载新版可执行文件，并进行 SHA-256 完整性校验"""
+        """通过多条高速节点下载新版可执行文件，支持低速自动熔断切换与 SHA-256 完整性校验"""
         import tempfile
         tmp_dir = tempfile.gettempdir()
         target_file = os.path.join(tmp_dir, f"PromptDock_update_{int(time.time())}.exe")
         last_err = None
 
+        # 优先尝试直连高速节点，若系统有代理随后兜底
         for trust_env in (False, True):
             s = cls._make_session(trust_env=trust_env)
             for node_name, prefix in GITHUB_MIRRORS:
                 url = f"{prefix}{download_url}" if prefix else download_url
+                env_tag = f"{node_name}(代理)" if trust_env else node_name
                 try:
                     if progress_cb:
-                        progress_cb(0, 0, f"正在连接 {node_name}...")
-                    r = s.get(url, stream=True, timeout=(6, 15))
+                        progress_cb(0, 0, f"正在连接 {env_tag}...")
+                    r = s.get(url, stream=True, timeout=(5, 10))
                     if r.status_code not in (200, 206):
-                        last_err = f"{node_name} 返回 HTTP {r.status_code}"
+                        last_err = f"{env_tag} 返回 HTTP {r.status_code}"
                         r.close()
                         continue
 
                     total = int(r.headers.get("Content-Length", 0) or 0)
                     downloaded = 0
+                    t_start = time.time()
+                    t_last_ui = t_start
                     hasher = hashlib.sha256()
+                    aborted_slow = False
+
                     with open(target_file, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=65536):
-                            if chunk:
-                                f.write(chunk)
-                                hasher.update(chunk)
-                                downloaded += len(chunk)
-                                if progress_cb:
-                                    progress_cb(downloaded, total, f"{node_name} 下载中")
+                        for chunk in r.iter_content(chunk_size=131072):
+                            if not chunk:
+                                continue
+                            f.write(chunk)
+                            hasher.update(chunk)
+                            downloaded += len(chunk)
+                            now = time.time()
+                            elapsed = max(0.05, now - t_start)
+                            speed_bps = downloaded / elapsed
+
+                            # 若持续 5 秒以上且平均速度低于 120 KB/s，自动切换更快的节点
+                            if elapsed > 5.0 and speed_bps < 120 * 1024 and downloaded < total:
+                                aborted_slow = True
+                                last_err = f"{env_tag} 速度过慢 ({speed_bps/1024:.0f} KB/s)"
+                                break
+
+                            if progress_cb and (now - t_last_ui >= 0.15 or (total and downloaded >= total)):
+                                t_last_ui = now
+                                sp_str = f"{speed_bps/(1024*1024):.1f} MB/s" if speed_bps >= 1024*1024 else f"{speed_bps/1024:.0f} KB/s"
+                                progress_cb(downloaded, total, f"{env_tag} ({sp_str})")
                     r.close()
 
+                    if aborted_slow:
+                        try:
+                            os.remove(target_file)
+                        except Exception:
+                            pass
+                        continue
+
                     if downloaded < 1024 * 1024:
-                        last_err = f"{node_name} 下载文件体积异常"
+                        last_err = f"{env_tag} 下载文件体积异常"
                         try:
                             os.remove(target_file)
                         except Exception:
@@ -2185,7 +2208,7 @@ class AppUpdateEngine:
 
                     actual_sha = hasher.hexdigest().lower()
                     if expected_sha256 and actual_sha != expected_sha256.lower():
-                        last_err = f"{node_name} SHA-256 校验未通过"
+                        last_err = f"{env_tag} SHA-256 校验未通过"
                         try:
                             os.remove(target_file)
                         except Exception:
@@ -2194,7 +2217,7 @@ class AppUpdateEngine:
 
                     return target_file
                 except Exception as e:
-                    last_err = f"{node_name}: {e}"
+                    last_err = f"{env_tag}: {e}"
                     try:
                         if os.path.exists(target_file):
                             os.remove(target_file)
@@ -2205,7 +2228,7 @@ class AppUpdateEngine:
 
     @staticmethod
     def apply_update_and_restart(new_exe_path: str) -> bool:
-        """在 Windows 下生成临时替换脚本：等待当前进程退出 -> 覆盖原 exe -> 自动启动新版"""
+        """在 Windows 下生成临时替换脚本：清除 PyInstaller 继承变量 -> 等待退出 -> 覆盖 exe -> 启动新版"""
         if not getattr(sys, "frozen", False):
             return False
         import subprocess
@@ -2215,7 +2238,11 @@ class AppUpdateEngine:
         script = (
             "@echo off\r\n"
             "chcp 65001 >nul\r\n"
-            "timeout /t 1 /nobreak >nul\r\n"
+            'set "_MEIPASS="\r\n'
+            'set "_MEIPASS2="\r\n'
+            'set "TCL_LIBRARY="\r\n'
+            'set "TK_LIBRARY="\r\n'
+            "timeout /t 2 /nobreak >nul\r\n"
             ":retry\r\n"
             f'move /y "{new_exe_path}" "{cur_exe}" >nul 2>&1\r\n'
             "if errorlevel 1 (\r\n"
@@ -2227,8 +2254,13 @@ class AppUpdateEngine:
         )
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(script)
-        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-        subprocess.Popen(["cmd", "/c", bat_path], creationflags=creation_flags, close_fds=True)
+
+        clean_env = os.environ.copy()
+        for k in ("_MEIPASS", "_MEIPASS2", "TCL_LIBRARY", "TK_LIBRARY", "_PYI_APPLICATION_HOME_DIR", "_PYI_PARENT_PROCESS_LEVEL"):
+            clean_env.pop(k, None)
+
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        subprocess.Popen(["cmd", "/c", bat_path], env=clean_env, creationflags=creation_flags, close_fds=True)
         return True
 
 

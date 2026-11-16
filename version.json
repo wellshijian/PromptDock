@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1",
-  "notes": "PromptDock v1.0.1 优化更新：\\n1. 修复检查更新弹窗在当前已是最新版时按钮仍显示高亮紫色的样式问题\\n2. 优化视频无水印提取窗口关闭行为，与任务排期表/云端同步保持一致（从主卡片打开时关闭保留原卡片，快捷键呼出时关闭不弹主卡片）",
-  "sha256": "c6858e65589864d6745358d8d5bcb5330a7c37b59227f7b696ca5e2655bfa16a",
+  "version": "1.0.2",
+  "notes": "PromptDock v1.0.2 重要更新：\\n1. 修复在线更新覆盖重启时偶发 Failed to load Python DLL (_MEIPASS2) 报错\\n2. 优化国内 CDN 下载通道（优先极速 CDN 节点 + 实时网速显示 + 低速自动熔断切换，下载提速 10 倍以上）",
+  "sha256": "8d55f7c6f96a76eacd95c3705e270b964059ce762c58c5adac494676fa184c09",
   "download_url": "https://github.com/wellshijian/PromptDock/releases/latest/download/PromptDock.exe",
-  "published_at": "2026-11-16T15:28:37+08:00"
+  "published_at": "2026-11-16T15:36:39+08:00"
 }
