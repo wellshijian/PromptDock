@@ -8,5 +8,6 @@ dist/
 clean_check.png
 test_minimal_avatar_ui.py
 PromptDock_绿色便携版.zip
+cf-worker/.wrangler/
 .vscode/
 .idea/
