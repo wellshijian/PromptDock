@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -986,6 +986,8 @@ class PromptCard(QFrame):
     folder_changed = Signal(str, str)
     copied = Signal(str)
     expand_toggled = Signal()
+    add_prompt_requested = Signal()
+    new_folder_requested = Signal()
 
     def __init__(self, prompt: dict, folders, in_folder=False, folder_name="", keyword="", parent=None):
         super().__init__(parent)
@@ -1210,6 +1212,10 @@ class PromptCard(QFrame):
         folder_menu.addSeparator()
         new_folder_action = folder_menu.addAction("新建文件夹...")
 
+        menu.addSeparator()
+        add_prompt_act = menu.addAction("＋  添加新提示词")
+        add_folder_act = menu.addAction("＋  新建文件夹")
+
         action = menu.exec(event.globalPos())
         if action == edit_action:
             self.edit_requested.emit(self.prompt["id"])
@@ -1223,6 +1229,10 @@ class PromptCard(QFrame):
             self.folder_changed.emit(self.prompt["id"], folder_actions[action])
         elif action == new_folder_action:
             self.folder_changed.emit(self.prompt["id"], "__new__")
+        elif action == add_prompt_act:
+            self.add_prompt_requested.emit()
+        elif action == add_folder_act:
+            self.new_folder_requested.emit()
 
 
 # ---------------------------------------------------------------------------
@@ -5593,6 +5603,10 @@ class MainWindow(QMainWindow):
         self._cloud_sync_timer.start()
         QTimer.singleShot(2500, self.sync_cloud_silently)
         QTimer.singleShot(4500, self.check_update_silently)
+        self._auto_update_timer = QTimer(self)
+        self._auto_update_timer.setInterval(2 * 60 * 60 * 1000)
+        self._auto_update_timer.timeout.connect(self.check_update_silently)
+        self._auto_update_timer.start()
         QTimer.singleShot(3000, self.warmup_extractor_engine)
 
         # 启动后若停留在边缘则自动吸附
@@ -5821,6 +5835,13 @@ class MainWindow(QMainWindow):
         body.setContentsMargins(10, 6, 10, 2)
         body.setSpacing(4)
 
+        self.tab_bar_row = QWidget()
+        self.tab_bar_row.setFixedHeight(32)
+        self.tab_bar_row.setStyleSheet("background: transparent;")
+        tab_bar_h = QHBoxLayout(self.tab_bar_row)
+        tab_bar_h.setContentsMargins(0, 0, 0, 0)
+        tab_bar_h.setSpacing(4)
+
         self.tab_scroll = QScrollArea()
         self.tab_scroll.setWidgetResizable(True)
         self.tab_scroll.setFixedHeight(32)
@@ -5834,7 +5855,21 @@ class MainWindow(QMainWindow):
         self.tab_layout.setContentsMargins(2, 2, 2, 2)
         self.tab_layout.setSpacing(6)
         self.tab_scroll.setWidget(self.tab_container)
-        body.addWidget(self.tab_scroll)
+        tab_bar_h.addWidget(self.tab_scroll, 1)
+
+        self.quick_new_btn = QToolButton()
+        self.quick_new_btn.setText("＋")
+        self.quick_new_btn.setToolTip("新建提示词 / 文件夹")
+        self.quick_new_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_new_btn.setFixedSize(24, 24)
+        self.quick_new_btn.setStyleSheet(
+            "QToolButton { background-color: #eef0f6; color: #4361ee; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; }"
+            "QToolButton:hover { background-color: #4361ee; color: #ffffff; }"
+        )
+        self.quick_new_btn.clicked.connect(self._show_quick_create_menu)
+        tab_bar_h.addWidget(self.quick_new_btn)
+
+        body.addWidget(self.tab_bar_row)
 
         self.list_widget = PromptListWidget()
         self.list_widget.setFrameShape(QFrame.NoFrame)
@@ -5872,18 +5907,11 @@ class MainWindow(QMainWindow):
             menu = QMenu(self)
             add_action = menu.addAction("＋  添加新提示词")
             new_folder_action = menu.addAction("＋  新建文件夹")
-            menu.addSeparator()
-            update_action = menu.addAction(f"🔄 检查更新 (v{APP_VERSION})...")
             action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
             if action == add_action:
                 self.add_prompt()
             elif action == new_folder_action:
-                name = self._prompt_new_folder_name()
-                if name:
-                    self._ensure_folder(name)
-                    self.render_cards()
-            elif action == update_action:
-                self.open_update_dialog()
+                self._create_new_folder_interactive()
             return
 
         widget = self.list_widget.itemWidget(item)
@@ -5924,29 +5952,18 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(APP_NAME)
 
         menu = QMenu()
-        show_action = QAction("显示 / 隐藏 PromptDock", self)
-        show_action.triggered.connect(self.toggle_visibility)
-        draft_action = QAction("📝 快速草稿纸...", self)
-        draft_action.triggered.connect(self.open_draft_pad)
-        media_action = QAction("🎬 视频无水印提取 (Shift+T)...", self)
-        media_action.triggered.connect(self.open_media_extractor)
-        schedule_action = QAction("📅 任务排期表 (Shift+A)...", self)
-        schedule_action.triggered.connect(self.open_schedule_pad)
-        capture_action = QAction("✂️ 划词快速收录...", self)
-        capture_action.triggered.connect(self.trigger_quick_capture)
         cloud_action = QAction("☁️ 账号与云端同步...", self)
         cloud_action.triggered.connect(self.open_cloud_sync_dialog)
         self.update_action = QAction(f"🔄 检查更新 (v{APP_VERSION})...", self)
         self.update_action.triggered.connect(lambda: self.open_update_dialog())
+        self.auto_update_action = QAction("自动后台更新并重启", self)
+        self.auto_update_action.setCheckable(True)
+        self.auto_update_action.setChecked(self.settings.get("auto_update", True))
+        self.auto_update_action.toggled.connect(self.toggle_auto_update)
 
-        menu.addAction(show_action)
-        menu.addAction(draft_action)
-        menu.addAction(media_action)
-        menu.addAction(schedule_action)
-        menu.addAction(capture_action)
-        menu.addSeparator()
         menu.addAction(cloud_action)
         menu.addAction(self.update_action)
+        menu.addAction(self.auto_update_action)
         menu.addSeparator()
         export_action = QAction("导出提示词...", self)
         export_action.triggered.connect(self.export_prompts)
@@ -6056,7 +6073,24 @@ class MainWindow(QMainWindow):
         save_settings(self.settings)
         self.render_cards()
 
-    # -- 标签栏 / 最近使用 / 键盘导航 -----------------------------------------
+    def _create_new_folder_interactive(self):
+        name = self._prompt_new_folder_name()
+        if name:
+            self._ensure_folder(name)
+            self.render_cards()
+
+    def _show_quick_create_menu(self):
+        menu = QMenu(self)
+        add_act = menu.addAction("＋  添加新提示词")
+        folder_act = menu.addAction("＋  新建文件夹")
+        pos = self.quick_new_btn.mapToGlobal(self.quick_new_btn.rect().bottomRight())
+        act = menu.exec(pos)
+        if act == add_act:
+            self.add_prompt()
+        elif act == folder_act:
+            self._create_new_folder_interactive()
+
+    # -- 标签栏 / 键盘导航 -------------------------------------------------
     def _rebuild_tab_bar(self, active_prompts, known_folders):
         while self.tab_layout.count():
             it = self.tab_layout.takeAt(0)
@@ -6064,14 +6098,9 @@ class MainWindow(QMainWindow):
             if w:
                 w.deleteLater()
 
-        recent_ids = self.settings.get("recent_ids", [])
-        active_id_set = {p["id"] for p in active_prompts}
-        recent_cnt = sum(1 for pid in recent_ids if pid in active_id_set)
         pinned_cnt = sum(1 for p in active_prompts if p.get("pinned"))
 
         tabs = [("all", f"全部 {len(active_prompts)}")]
-        if recent_cnt > 0:
-            tabs.append(("recent", f"🕒 最近 {recent_cnt}"))
         if pinned_cnt > 0:
             tabs.append(("pinned", f"📌 置顶 {pinned_cnt}"))
         for name in known_folders:
@@ -6196,6 +6225,8 @@ class MainWindow(QMainWindow):
             card.folder_changed.connect(self.change_prompt_folder)
             card.copied.connect(self._record_recent)
             card.expand_toggled.connect(self._on_card_expand_toggled)
+            card.add_prompt_requested.connect(self.add_prompt)
+            card.new_folder_requested.connect(self._create_new_folder_interactive)
             item = QListWidgetItem()
             item.setFlags(Qt.ItemIsEnabled)
             item.setData(Qt.UserRole, {"type": "card", "group": group_meta})
@@ -6207,15 +6238,7 @@ class MainWindow(QMainWindow):
             self.list_widget.addItem(item)
             self.list_widget.setItemWidget(item, card)
 
-        if self.active_tab == "recent" and not search_active:
-            by_id = {p["id"]: p for p in active_prompts}
-            for pid in self.settings.get("recent_ids", []):
-                p = by_id.get(pid)
-                if p:
-                    fn = p.get("folder", "")
-                    gm = self._group_meta(f"folder:{fn}" if fn else GROUP_UNCATEGORIZED, fn or None)
-                    _append_card(p, gm, in_folder=bool(fn), folder_name=fn)
-        elif self.active_tab == "pinned" and not search_active:
+        if self.active_tab == "pinned" and not search_active:
             for p in active_prompts:
                 if p.get("pinned"):
                     fn = p.get("folder", "")
@@ -6245,16 +6268,13 @@ class MainWindow(QMainWindow):
 
                 in_folder = group_key.startswith("folder:")
                 is_single_folder_tab = (self.active_tab == group_key and not search_active)
-                display_label = label
-                if display_label is None and group_key == GROUP_UNCATEGORIZED and known_folders:
-                    display_label = "未分类"
 
-                if display_label is not None and not is_single_folder_tab:
+                if label is not None and not is_single_folder_tab:
                     collapsed = (group_key in self.collapsed_groups) if in_folder else False
                     header_item = QListWidgetItem()
                     header_item.setFlags(Qt.ItemIsEnabled)
                     header_item.setData(Qt.UserRole, self._group_meta(group_key, label))
-                    header_widget = FolderHeader(group_key, display_label, len(items), collapsed, is_folder=in_folder)
+                    header_widget = FolderHeader(group_key, label, len(items), collapsed, is_folder=in_folder)
                     if in_folder:
                         header_widget.toggled.connect(self._toggle_group)
                     self.list_widget.addItem(header_item)
@@ -6268,6 +6288,12 @@ class MainWindow(QMainWindow):
                 group_meta = self._group_meta(group_key, label)
                 for p in visible_items:
                     _append_card(p, group_meta, in_folder=in_folder, folder_name=label or "")
+
+        # 底部留白区，确保列表内容再多也能在底部空白处右键新建
+        spacer_item = QListWidgetItem()
+        spacer_item.setFlags(Qt.NoItemFlags)
+        spacer_item.setSizeHint(QSize(10, 36))
+        self.list_widget.addItem(spacer_item)
 
         self.list_widget.viewport().update()
         self.list_widget.update()
@@ -6478,23 +6504,59 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_job, daemon=True).start()
 
+    def toggle_auto_update(self, checked):
+        self.settings["auto_update"] = bool(checked)
+        save_settings(self.settings)
+        if checked:
+            self.check_update_silently()
+
     def check_update_silently(self):
+        if getattr(self, "_bg_downloading", False):
+            return
         self._bg_update_worker = UpdateCheckWorker()
         self._bg_update_worker.finished.connect(self._on_bg_update_checked)
         self._bg_update_worker.start()
 
     def _on_bg_update_checked(self, info: dict):
-        if info.get("has_update"):
-            latest = info.get("latest_version", "")
-            if hasattr(self, "update_action"):
-                self.update_action.setText(f"🆕 发现新版本 v{latest} (点击更新)...")
-            if hasattr(self, "tray"):
-                self.tray.showMessage(
-                    f"{APP_NAME} 发现新版本 v{latest}",
-                    "右键托盘图标点击「发现新版本」，即可国内免梯子一键同步更新！",
-                    QSystemTrayIcon.Information,
-                    4000,
-                )
+        if not info.get("has_update"):
+            return
+        latest = info.get("latest_version", "")
+        if hasattr(self, "update_action"):
+            self.update_action.setText(f"🆕 发现新版本 v{latest} (点击更新)...")
+
+        # 若开启后台自动更新且当前为打包版运行，静默下载 -> SHA-256 校验 -> 自动重启升级
+        if self.settings.get("auto_update", True) and getattr(sys, "frozen", False):
+            if getattr(self, "_bg_downloading", False):
+                return
+            self._bg_downloading = True
+            self._bg_latest_ver = latest
+            self._bg_dl_worker = UpdateDownloadWorker(
+                info.get("download_url", ""),
+                info.get("sha256", ""),
+            )
+            self._bg_dl_worker.finished.connect(self._on_bg_update_downloaded)
+            self._bg_dl_worker.failed.connect(lambda _err: setattr(self, "_bg_downloading", False))
+            self._bg_dl_worker.start()
+        elif hasattr(self, "tray"):
+            self.tray.showMessage(
+                f"{APP_NAME} 发现新版本 v{latest}",
+                "右键托盘图标点击「发现新版本」，即可国内免梯子一键同步更新！",
+                QSystemTrayIcon.Information,
+                4000,
+            )
+
+    def _on_bg_update_downloaded(self, new_exe_path: str):
+        self._bg_downloading = False
+        latest = getattr(self, "_bg_latest_ver", "")
+        if hasattr(self, "tray"):
+            self.tray.showMessage(
+                f"🚀 {APP_NAME} v{latest} 已下载就绪",
+                "已完成安全校验，正在自动重启更新至最新版本...",
+                QSystemTrayIcon.Information,
+                2500,
+            )
+        if AppUpdateEngine.apply_update_and_restart(new_exe_path):
+            QTimer.singleShot(1500, QApplication.instance().quit)
 
     def trigger_quick_capture(self):
         if IS_WINDOWS:
@@ -6680,7 +6742,7 @@ class MainWindow(QMainWindow):
         self.draft_pad.load()
         self.body_stack.setCurrentWidget(self.draft_pad)
         self.in_draft_mode = True
-        self.tab_scroll.setVisible(False)
+        self.tab_bar_row.setVisible(False)
         self.title_bar.update_draft_state(True)
         if not self.isVisible():
             self.show()
@@ -6692,7 +6754,7 @@ class MainWindow(QMainWindow):
         self.draft_pad.flush_save()
         self.body_stack.setCurrentWidget(self.list_widget)
         self.in_draft_mode = False
-        self.tab_scroll.setVisible(True)
+        self.tab_bar_row.setVisible(True)
         self.title_bar.update_draft_state(False)
 
     def toggle_media_extractor(self):
