@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -767,8 +767,14 @@ def _find_prompt_list_widget(widget):
     return w
 
 
-def _accept_promptdock_drag(event):
+def _accept_promptdock_drag(event, widget=None):
     if event.mimeData().hasFormat("application/x-promptdock-id"):
+        if widget is not None:
+            lw = _find_prompt_list_widget(widget)
+            if lw is not None:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                list_pos = lw.viewport().mapFromGlobal(widget.mapToGlobal(pos))
+                lw._update_drop_indicator(list_pos)
         event.setDropAction(Qt.MoveAction)
         event.accept()
     else:
@@ -787,18 +793,26 @@ def _forward_drop_to_list(widget, event):
     prompt_id = bytes(mime.data("application/x-promptdock-id")).decode("utf-8")
     pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
     list_pos = lw.viewport().mapFromGlobal(widget.mapToGlobal(pos))
-    row = lw.indexAt(list_pos).row()
-    if row == -1:
-        row = lw.count()
-    lw.card_dropped.emit(prompt_id, row)
+    lw._handle_drop_at(prompt_id, list_pos)
     event.setDropAction(Qt.MoveAction)
     event.accept()
 
 
 FOLDER_PALETTE = ["#4361ee", "#e8762b", "#2fb67c", "#b05cf0", "#e0508a", "#1ba8c9", "#c9a227"]
+FOLDER_COLOR_PRESETS = [
+    ("主题蓝", "#4361ee"),
+    ("活力橙", "#e8762b"),
+    ("翡翠绿", "#2fb67c"),
+    ("薰衣紫", "#b05cf0"),
+    ("樱花粉", "#e0508a"),
+    ("晴空青", "#1ba8c9"),
+    ("琥珀金", "#c9a227"),
+]
 
 
-def _folder_color(name):
+def _folder_color(name, custom_colors=None):
+    if custom_colors and name in custom_colors:
+        return custom_colors[name]
     return FOLDER_PALETTE[sum(ord(c) for c in (name or "")) % len(FOLDER_PALETTE)]
 
 
@@ -807,7 +821,7 @@ class FolderHeader(QWidget):
     delete_requested = Signal(str)
     rename_requested = Signal(str)
 
-    def __init__(self, group_key, label, count, collapsed, is_folder=False):
+    def __init__(self, group_key, label, count, collapsed, is_folder=False, color=None, pinned=False):
         super().__init__()
         self.group_key = group_key
         self.label = label
@@ -820,7 +834,7 @@ class FolderHeader(QWidget):
         outer.setContentsMargins(0, 4, 0, 0)
         outer.setSpacing(0)
 
-        color = _folder_color(label) if is_folder else "#8a90a6"
+        color = color or (_folder_color(label) if is_folder else "#8a90a6")
         c = QColor(color)
         rgb = "{},{},{}".format(c.red(), c.green(), c.blue())
 
@@ -845,6 +859,10 @@ class FolderHeader(QWidget):
         self.text_label = QLabel(label)
         self.text_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #2b2f42; background: transparent;")
         bl.addWidget(self.text_label)
+        if pinned:
+            pin_lbl = QLabel("📌")
+            pin_lbl.setStyleSheet("font-size: 11px; background: transparent;")
+            bl.addWidget(pin_lbl)
         bl.addStretch(1)
 
         self.badge = QLabel(str(count))
@@ -876,10 +894,10 @@ class FolderHeader(QWidget):
         event.accept()
 
     def dragEnterEvent(self, event):
-        _accept_promptdock_drag(event)
+        _accept_promptdock_drag(event, self)
 
     def dragMoveEvent(self, event):
-        _accept_promptdock_drag(event)
+        _accept_promptdock_drag(event, self)
 
     def dropEvent(self, event):
         _forward_drop_to_list(self, event)
@@ -908,6 +926,7 @@ class PromptListWidget(QListWidget):
         self._wheel_anim.setDuration(220)
         self._wheel_anim.setEasingCurve(QEasingCurve.OutCubic)
         self._wheel_target = None
+        self._drop_line_y = None
 
     def stop_smooth(self):
         self._wheel_anim.stop()
@@ -937,8 +956,75 @@ class PromptListWidget(QListWidget):
         self._wheel_anim.start()
         event.accept()
 
+    def _real_item_count(self):
+        cnt = self.count()
+        while cnt > 0:
+            it = self.item(cnt - 1)
+            if it and it.flags() == Qt.NoItemFlags:
+                cnt -= 1
+            else:
+                break
+        return cnt
+
+    def _calc_insert_row_and_y(self, pos):
+        real_cnt = self._real_item_count()
+        if real_cnt == 0:
+            return 0, 4
+        row = self.indexAt(pos).row()
+        if row == -1 or row >= real_cnt:
+            last_rect = self.visualItemRect(self.item(real_cnt - 1))
+            return real_cnt, last_rect.bottom() + 2
+        it = self.item(row)
+        rect = self.visualItemRect(it)
+        data = it.data(Qt.UserRole) or {}
+        if data.get("type") == "header":
+            # 拖到文件夹标题条上：视作放到该文件夹内第一条位置
+            return row + 1, rect.bottom() + 2
+        if pos.y() < rect.center().y():
+            return row, rect.top() - 2
+        return row + 1, rect.bottom() + 2
+
+    def _update_drop_indicator(self, pos):
+        self.stop_smooth()
+        vh = self.viewport().height()
+        bar = self.verticalScrollBar()
+        if pos.y() < 28 and bar.value() > bar.minimum():
+            bar.setValue(bar.value() - 18)
+        elif pos.y() > vh - 28 and bar.value() < bar.maximum():
+            bar.setValue(bar.value() + 18)
+        _, line_y = self._calc_insert_row_and_y(pos)
+        if self._drop_line_y != line_y:
+            self._drop_line_y = line_y
+            self.viewport().update()
+
+    def _clear_drop_indicator(self):
+        if self._drop_line_y is not None:
+            self._drop_line_y = None
+            self.viewport().update()
+
+    def _handle_drop_at(self, prompt_id, pos):
+        insert_row, _ = self._calc_insert_row_and_y(pos)
+        self._clear_drop_indicator()
+        self.card_dropped.emit(prompt_id, insert_row)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._drop_line_y is not None:
+            painter = QPainter(self.viewport())
+            painter.setRenderHint(QPainter.Antialiasing)
+            y = max(2, min(self.viewport().height() - 3, self._drop_line_y))
+            color = QColor("#4361ee")
+            painter.setPen(QPen(color, 2.5))
+            painter.drawLine(12, y, self.viewport().width() - 14, y)
+            painter.setBrush(color)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(10, y), 4, 4)
+            painter.end()
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat("application/x-promptdock-id"):
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            self._update_drop_indicator(pos)
             event.setDropAction(Qt.MoveAction)
             event.accept()
         else:
@@ -946,22 +1032,26 @@ class PromptListWidget(QListWidget):
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasFormat("application/x-promptdock-id"):
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            self._update_drop_indicator(pos)
             event.setDropAction(Qt.MoveAction)
             event.accept()
         else:
             event.ignore()
 
+    def dragLeaveEvent(self, event):
+        self._clear_drop_indicator()
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
         mime = event.mimeData()
         if not mime.hasFormat("application/x-promptdock-id"):
+            self._clear_drop_indicator()
             event.ignore()
             return
         prompt_id = bytes(mime.data("application/x-promptdock-id")).decode("utf-8")
         pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
-        row = self.indexAt(pos).row()
-        if row == -1:
-            row = self.count()
-        self.card_dropped.emit(prompt_id, row)
+        self._handle_drop_at(prompt_id, pos)
         event.setDropAction(Qt.MoveAction)
         event.accept()
 
@@ -989,12 +1079,13 @@ class PromptCard(QFrame):
     add_prompt_requested = Signal()
     new_folder_requested = Signal()
 
-    def __init__(self, prompt: dict, folders, in_folder=False, folder_name="", keyword="", parent=None):
+    def __init__(self, prompt: dict, folders, in_folder=False, folder_name="", keyword="", folder_color="", parent=None):
         super().__init__(parent)
         self.prompt = prompt
         self.folders = folders
         self.in_folder = in_folder
         self.folder_name = folder_name or prompt.get("folder", "")
+        self.folder_color = folder_color
         self.keyword = keyword or ""
         self._expanded = False
         self._selected = False
@@ -1111,7 +1202,7 @@ class PromptCard(QFrame):
         if self._selected:
             border_rule = "border: 1.5px solid #4361ee;"
         elif self.in_folder and self.folder_name:
-            fc = _folder_color(self.folder_name)
+            fc = self.folder_color or _folder_color(self.folder_name)
             border_rule = f"border: 1px solid rgba(0,0,0,0.04); border-left: 3px solid {fc};"
         else:
             border_rule = "border: 1px solid rgba(0,0,0,0.04);"
@@ -1159,10 +1250,10 @@ class PromptCard(QFrame):
         drag.exec(Qt.MoveAction)
 
     def dragEnterEvent(self, event):
-        _accept_promptdock_drag(event)
+        _accept_promptdock_drag(event, self)
 
     def dragMoveEvent(self, event):
-        _accept_promptdock_drag(event)
+        _accept_promptdock_drag(event, self)
 
     def dropEvent(self, event):
         _forward_drop_to_list(self, event)
@@ -1212,10 +1303,6 @@ class PromptCard(QFrame):
         folder_menu.addSeparator()
         new_folder_action = folder_menu.addAction("新建文件夹...")
 
-        menu.addSeparator()
-        add_prompt_act = menu.addAction("＋  添加新提示词")
-        add_folder_act = menu.addAction("＋  新建文件夹")
-
         action = menu.exec(event.globalPos())
         if action == edit_action:
             self.edit_requested.emit(self.prompt["id"])
@@ -1229,10 +1316,6 @@ class PromptCard(QFrame):
             self.folder_changed.emit(self.prompt["id"], folder_actions[action])
         elif action == new_folder_action:
             self.folder_changed.emit(self.prompt["id"], "__new__")
-        elif action == add_prompt_act:
-            self.add_prompt_requested.emit()
-        elif action == add_folder_act:
-            self.new_folder_requested.emit()
 
 
 # ---------------------------------------------------------------------------
@@ -5903,7 +5986,8 @@ class MainWindow(QMainWindow):
 
     def _on_list_context_menu(self, pos):
         item = self.list_widget.itemAt(pos)
-        if item is None:
+        widget = self.list_widget.itemWidget(item) if item is not None else None
+        if item is None or widget is None:
             menu = QMenu(self)
             add_action = menu.addAction("＋  添加新提示词")
             new_folder_action = menu.addAction("＋  新建文件夹")
@@ -5914,16 +5998,91 @@ class MainWindow(QMainWindow):
                 self._create_new_folder_interactive()
             return
 
-        widget = self.list_widget.itemWidget(item)
         if isinstance(widget, FolderHeader) and widget.is_folder:
+            fname = widget.label
+            pinned_folders = list(self.settings.get("pinned_folders", []))
+            is_pinned = fname in pinned_folders
+
             menu = QMenu(self)
             rename_action = menu.addAction("重命名文件夹")
             delete_action = menu.addAction("删除文件夹")
+            menu.addSeparator()
+            pin_action = menu.addAction("取消置顶文件夹" if is_pinned else "置顶文件夹")
+            menu.addSeparator()
+
+            color_menu = menu.addMenu("文件夹颜色")
+            color_actions = {}
+            for cname, hex_c in FOLDER_COLOR_PRESETS:
+                act = color_menu.addAction(_color_swatch_icon(hex_c), cname)
+                color_actions[act] = hex_c
+            color_menu.addSeparator()
+            reset_color_act = color_menu.addAction("恢复默认颜色")
+
+            move_menu = menu.addMenu("移动到文件夹")
+            move_actions = {}
+            uncat_act = move_menu.addAction("未分类（解散文件夹）")
+            move_actions[uncat_act] = ""
+            for other in self.get_all_folders():
+                if other != fname:
+                    act = move_menu.addAction(other)
+                    move_actions[act] = other
+            move_menu.addSeparator()
+            move_new_act = move_menu.addAction("新建文件夹...")
+
             action = menu.exec(self.list_widget.viewport().mapToGlobal(pos))
             if action == rename_action:
-                self.rename_folder(widget.label)
+                self.rename_folder(fname)
             elif action == delete_action:
-                self.delete_folder(widget.label)
+                self.delete_folder(fname)
+            elif action == pin_action:
+                self.toggle_pin_folder(fname)
+            elif action in color_actions:
+                self.change_folder_color(fname, color_actions[action])
+            elif action == reset_color_act:
+                self.change_folder_color(fname, "")
+            elif action in move_actions:
+                self.move_folder_items(fname, move_actions[action])
+            elif action == move_new_act:
+                new_f = self._prompt_new_folder_name()
+                if new_f:
+                    self._ensure_folder(new_f)
+                    self.move_folder_items(fname, new_f)
+
+    def toggle_pin_folder(self, name):
+        pf = list(self.settings.get("pinned_folders", []))
+        if name in pf:
+            pf.remove(name)
+        else:
+            pf.insert(0, name)
+        self.settings["pinned_folders"] = pf
+        save_settings(self.settings)
+        self.render_cards()
+
+    def change_folder_color(self, name, hex_color):
+        fc = dict(self.settings.get("folder_colors", {}))
+        if hex_color:
+            fc[name] = hex_color
+        else:
+            fc.pop(name, None)
+        self.settings["folder_colors"] = fc
+        save_settings(self.settings)
+        self.render_cards()
+
+    def move_folder_items(self, src_folder, dst_folder):
+        now = int(time.time() * 1000)
+        for p in self.prompts:
+            if not p.get("is_deleted", False) and p.get("folder") == src_folder:
+                p["folder"] = dst_folder
+                p["updated_at"] = now
+        self.settings["folders"] = [f for f in self.settings.get("folders", []) if f != src_folder]
+        pf = [f for f in self.settings.get("pinned_folders", []) if f != src_folder]
+        self.settings["pinned_folders"] = pf
+        self.collapsed_groups.discard(f"folder:{src_folder}")
+        self.settings["collapsed_groups"] = list(self.collapsed_groups)
+        save_settings(self.settings)
+        save_prompts(self.prompts)
+        self.render_cards()
+        self.sync_cloud_silently()
 
     def _resolve_folder_name(self, text):
         text = (text or "").strip()
@@ -6011,7 +6170,10 @@ class MainWindow(QMainWindow):
             if f and f not in known:
                 ordered.append(f)
                 known.add(f)
-        return ordered
+        pinned_set = list(self.settings.get("pinned_folders", []))
+        pinned_ordered = [f for f in pinned_set if f in known]
+        others = [f for f in ordered if f not in pinned_ordered]
+        return pinned_ordered + others
 
     def _ensure_folder(self, name):
         if not name:
@@ -6209,6 +6371,8 @@ class MainWindow(QMainWindow):
         keyword = self.title_bar.search_box.text().strip()
         search_active = bool(keyword)
         known_folders = self.get_all_folders()
+        folder_colors = self.settings.get("folder_colors", {})
+        pinned_folders = set(self.settings.get("pinned_folders", []))
         active_prompts = [p for p in self.prompts if not p.get("is_deleted", False)]
 
         self._rebuild_tab_bar(active_prompts, known_folders)
@@ -6217,7 +6381,8 @@ class MainWindow(QMainWindow):
             return [p for p in items if p.get("pinned")] + [p for p in items if not p.get("pinned")]
 
         def _append_card(p, group_meta, in_folder=False, folder_name=""):
-            card = PromptCard(p, known_folders, in_folder=in_folder, folder_name=folder_name, keyword=keyword)
+            fc = _folder_color(folder_name, folder_colors) if (in_folder and folder_name) else ""
+            card = PromptCard(p, known_folders, in_folder=in_folder, folder_name=folder_name, keyword=keyword, folder_color=fc)
             card.edit_requested.connect(self.edit_prompt)
             card.delete_requested.connect(self.delete_prompt)
             card.color_changed.connect(self.change_prompt_color)
@@ -6274,7 +6439,11 @@ class MainWindow(QMainWindow):
                     header_item = QListWidgetItem()
                     header_item.setFlags(Qt.ItemIsEnabled)
                     header_item.setData(Qt.UserRole, self._group_meta(group_key, label))
-                    header_widget = FolderHeader(group_key, label, len(items), collapsed, is_folder=in_folder)
+                    fc = _folder_color(label, folder_colors) if in_folder else "#8a90a6"
+                    header_widget = FolderHeader(
+                        group_key, label, len(items), collapsed,
+                        is_folder=in_folder, color=fc, pinned=(label in pinned_folders)
+                    )
                     if in_folder:
                         header_widget.toggled.connect(self._toggle_group)
                     self.list_widget.addItem(header_item)
@@ -6322,19 +6491,69 @@ class MainWindow(QMainWindow):
                 return data.get("group", {"kind": "uncategorized"})
         return {"kind": "uncategorized"}
 
-    def _on_card_dropped(self, prompt_id, row):
+    def _on_card_dropped(self, prompt_id, insert_row):
         target = next((p for p in self.prompts if p["id"] == prompt_id), None)
         if not target:
             return
-        group = self._group_kind_at_row(row)
-        if group.get("kind") == "folder":
-            target["folder"] = group.get("name", "")
+
+        real_cnt = self.list_widget._real_item_count()
+        insert_row = max(0, min(insert_row, real_cnt))
+
+        # 确定目标所属分组：若插入点落在某张卡片上/上方，优先归属该卡片所在分组；否则参照前一行
+        if insert_row < real_cnt:
+            next_data = (self.list_widget.item(insert_row).data(Qt.UserRole) or {})
+            if next_data.get("type") == "card":
+                group = next_data.get("group", {"kind": "uncategorized"})
+            elif insert_row > 0:
+                group = self._group_kind_at_row(insert_row - 1)
+            else:
+                group = self._group_kind_at_row(0)
+        elif insert_row > 0:
+            group = self._group_kind_at_row(insert_row - 1)
         else:
-            target["folder"] = ""
+            group = {"kind": "uncategorized"}
+
+        new_folder = group.get("name", "") if group.get("kind") == "folder" else ""
+        target["folder"] = new_folder
         target["updated_at"] = int(time.time() * 1000)
-        # 挪到目标分组的末尾（按 self.prompts 里的相对顺序过滤显示，这样它会显示在该分组最后一条）
+
+        # 查找插入点前后紧邻的同组卡片，实现列表内任意位置的精确插入
+        after_card_id = None
+        if insert_row < real_cnt:
+            for r in range(insert_row, real_cnt):
+                it = self.list_widget.item(r)
+                w = self.list_widget.itemWidget(it)
+                d = it.data(Qt.UserRole) or {}
+                if d.get("type") == "header":
+                    break
+                if isinstance(w, PromptCard) and w.prompt["id"] != prompt_id:
+                    if w.prompt.get("folder", "") == new_folder:
+                        after_card_id = w.prompt["id"]
+                        break
+
+        before_card_id = None
+        if after_card_id is None and insert_row > 0:
+            for r in range(insert_row - 1, -1, -1):
+                it = self.list_widget.item(r)
+                w = self.list_widget.itemWidget(it)
+                d = it.data(Qt.UserRole) or {}
+                if d.get("type") == "header":
+                    break
+                if isinstance(w, PromptCard) and w.prompt["id"] != prompt_id:
+                    if w.prompt.get("folder", "") == new_folder:
+                        before_card_id = w.prompt["id"]
+                        break
+
         self.prompts.remove(target)
-        self.prompts.append(target)
+        if after_card_id is not None:
+            idx = next((i for i, p in enumerate(self.prompts) if p["id"] == after_card_id), len(self.prompts))
+            self.prompts.insert(idx, target)
+        elif before_card_id is not None:
+            idx = next((i for i, p in enumerate(self.prompts) if p["id"] == before_card_id), len(self.prompts) - 1)
+            self.prompts.insert(idx + 1, target)
+        else:
+            self.prompts.append(target)
+
         save_prompts(self.prompts)
         self.render_cards()
         self.sync_cloud_silently()
