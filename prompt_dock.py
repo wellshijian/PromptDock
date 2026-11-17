@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -6119,12 +6119,16 @@ class MainWindow(QMainWindow):
         save_settings(self.settings)
 
     def _on_card_expand_toggled(self):
+        vw = max(240, self.list_widget.viewport().width() - 4)
         for r in range(self.list_widget.count()):
             it = self.list_widget.item(r)
             w = self.list_widget.itemWidget(it)
             if isinstance(w, PromptCard):
-                w.adjustSize()
-                it.setSizeHint(w.sizeHint())
+                h = w.heightForWidth(vw)
+                if h <= 0:
+                    h = w.sizeHint().height()
+                it.setSizeHint(QSize(vw, h))
+        self.list_widget.doItemsLayout()
 
     def _move_card_selection(self, delta: int):
         card_rows = [
@@ -6195,7 +6199,11 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem()
             item.setFlags(Qt.ItemIsEnabled)
             item.setData(Qt.UserRole, {"type": "card", "group": group_meta})
-            item.setSizeHint(card.sizeHint())
+            vw = max(240, self.list_widget.viewport().width() - 4)
+            h = card.heightForWidth(vw)
+            if h <= 0:
+                h = card.sizeHint().height()
+            item.setSizeHint(QSize(vw, h))
             self.list_widget.addItem(item)
             self.list_widget.setItemWidget(item, card)
 
@@ -6237,16 +6245,21 @@ class MainWindow(QMainWindow):
 
                 in_folder = group_key.startswith("folder:")
                 is_single_folder_tab = (self.active_tab == group_key and not search_active)
+                display_label = label
+                if display_label is None and group_key == GROUP_UNCATEGORIZED and known_folders:
+                    display_label = "未分类"
 
-                if label is not None and not is_single_folder_tab:
-                    collapsed = group_key in self.collapsed_groups
+                if display_label is not None and not is_single_folder_tab:
+                    collapsed = (group_key in self.collapsed_groups) if in_folder else False
                     header_item = QListWidgetItem()
                     header_item.setFlags(Qt.ItemIsEnabled)
                     header_item.setData(Qt.UserRole, self._group_meta(group_key, label))
-                    header_widget = FolderHeader(group_key, label, len(items), collapsed, is_folder=in_folder)
-                    header_widget.toggled.connect(self._toggle_group)
+                    header_widget = FolderHeader(group_key, display_label, len(items), collapsed, is_folder=in_folder)
+                    if in_folder:
+                        header_widget.toggled.connect(self._toggle_group)
                     self.list_widget.addItem(header_item)
-                    header_item.setSizeHint(header_widget.sizeHint())
+                    vw = max(240, self.list_widget.viewport().width() - 4)
+                    header_item.setSizeHint(QSize(vw, header_widget.sizeHint().height()))
                     self.list_widget.setItemWidget(header_item, header_widget)
 
                     if collapsed and not search_active:
