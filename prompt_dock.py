@@ -53,11 +53,11 @@ from PySide6.QtWidgets import (
     QDialog, QTextEdit, QSystemTrayIcon, QMenu, QMessageBox,
     QGraphicsDropShadowEffect, QFileDialog, QSlider, QListWidget,
     QListWidgetItem, QAbstractItemView, QComboBox, QInputDialog, QScrollArea,
-    QButtonGroup, QStackedWidget, QCheckBox, QProgressBar, QToolTip
+    QButtonGroup, QStackedWidget, QCheckBox, QProgressBar, QToolTip, QSizePolicy
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -694,7 +694,7 @@ QToolButton#TitleBtn:hover {{ background-color: rgba(255,255,255,0.15); }}
     background-color: #f5f6fa; border-radius: 12px; border: 1px solid transparent;
 }}
 #Card:hover {{ border: 1px solid #d8dcf5; }}
-#CardTitle {{ font-size: 14px; font-weight: 600; color: #242424; }}
+#CardTitle {{ font-size: 13px; font-weight: 600; color: #242424; }}
 #SegTitle {{ font-size: 11px; font-weight: 600; color: #6a6f9c; }}
 #CardPreview {{ font-size: 12px; color: #7a7a7a; }}
 #PinBadge {{ font-size: 10px; color: {ac}; font-weight: 600; }}
@@ -708,6 +708,17 @@ QDialog {{ background-color: #ffffff; }}
 QListWidget {{ background: transparent; border: none; }}
 QListWidget::item {{ border: none; }}
 QListWidget::item:selected {{ background: transparent; }}
+QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px 1px 2px 0; }}
+QScrollBar::handle:vertical {{ background: #cfd3e4; border-radius: 3px; min-height: 36px; }}
+QScrollBar::handle:vertical:hover {{ background: {ac}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+QPushButton#TabChip {{
+    background-color: #eef0f6; color: #4e5368; border: none; border-radius: 10px;
+    padding: 3px 9px; font-size: 11px; font-weight: 500;
+}}
+QPushButton#TabChip:hover {{ background-color: #dfe3f2; color: #2b2f42; }}
+QPushButton#TabChip:checked {{ background-color: {ac}; color: #ffffff; font-weight: 600; }}
 QMenu {{
     background-color: #ffffff; border: 1px solid #e3e3ec; border-radius: 8px; padding: 4px;
 }}
@@ -784,6 +795,13 @@ def _forward_drop_to_list(widget, event):
     event.accept()
 
 
+FOLDER_PALETTE = ["#4361ee", "#e8762b", "#2fb67c", "#b05cf0", "#e0508a", "#1ba8c9", "#c9a227"]
+
+
+def _folder_color(name):
+    return FOLDER_PALETTE[sum(ord(c) for c in (name or "")) % len(FOLDER_PALETTE)]
+
+
 class FolderHeader(QWidget):
     toggled = Signal(str)
     delete_requested = Signal(str)
@@ -797,16 +815,50 @@ class FolderHeader(QWidget):
         self._press_pos = None
         self.setCursor(Qt.PointingHandCursor)
         self.setAcceptDrops(True)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 8, 4, 4)
-        layout.setSpacing(6)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 4, 0, 0)
+        outer.setSpacing(0)
+
+        color = _folder_color(label) if is_folder else "#8a90a6"
+        c = QColor(color)
+        rgb = "{},{},{}".format(c.red(), c.green(), c.blue())
+
+        self.bar = QFrame()
+        self.bar.setObjectName("FolderBar")
+        self.bar.setStyleSheet(
+            "QFrame#FolderBar {{ background-color: rgba({rgb},0.10); border-left: 4px solid {col}; border-radius: 8px; }}"
+            "QFrame#FolderBar:hover {{ background-color: rgba({rgb},0.18); }}".format(rgb=rgb, col=color)
+        )
+        bl = QHBoxLayout(self.bar)
+        bl.setContentsMargins(10, 7, 12, 7)
+        bl.setSpacing(8)
+
+        if not is_folder:
+            icon_txt = "🗂"
+        else:
+            icon_txt = "📁" if collapsed else "📂"
+        self.icon = QLabel(icon_txt)
+        self.icon.setStyleSheet("font-size: 15px; background: transparent;")
+        bl.addWidget(self.icon)
+
+        self.text_label = QLabel(label)
+        self.text_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #2b2f42; background: transparent;")
+        bl.addWidget(self.text_label)
+        bl.addStretch(1)
+
+        self.badge = QLabel(str(count))
+        self.badge.setStyleSheet(
+            "QLabel {{ background-color: rgba({rgb},0.16); color: {col}; border-radius: 9px; "
+            "padding: 1px 8px; font-size: 11px; font-weight: 600; }}".format(rgb=rgb, col=color)
+        )
+        bl.addWidget(self.badge)
+
         self.arrow = QLabel("▸" if collapsed else "▾")
-        self.arrow.setObjectName("FolderArrow")
-        layout.addWidget(self.arrow)
-        self.text_label = QLabel("{} ({})".format(label, count))
-        self.text_label.setObjectName("FolderHeaderText")
-        layout.addWidget(self.text_label)
-        layout.addStretch()
+        self.arrow.setStyleSheet("font-size: 12px; color: {}; background: transparent;".format(color))
+        bl.addWidget(self.arrow)
+
+        outer.addWidget(self.bar)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -850,6 +902,40 @@ class PromptListWidget(QListWidget):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.verticalScrollBar().setSingleStep(24)
+        self._wheel_anim = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
+        self._wheel_anim.setDuration(220)
+        self._wheel_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._wheel_target = None
+
+    def stop_smooth(self):
+        self._wheel_anim.stop()
+        self._wheel_target = None
+
+    def wheelEvent(self, event):
+        bar = self.verticalScrollBar()
+        if bar.maximum() <= 0:
+            return super().wheelEvent(event)
+        pix = event.pixelDelta()
+        if not pix.isNull():
+            # 触控板：直接按像素跟手滚动
+            self.stop_smooth()
+            bar.setValue(bar.value() - pix.y())
+            event.accept()
+            return
+        dy = event.angleDelta().y()
+        if dy == 0:
+            return super().wheelEvent(event)
+        running = self._wheel_anim.state() == QPropertyAnimation.Running and self._wheel_target is not None
+        base = self._wheel_target if running else bar.value()
+        target = int(max(bar.minimum(), min(bar.maximum(), base - dy / 120.0 * 64)))
+        self._wheel_target = target
+        self._wheel_anim.stop()
+        self._wheel_anim.setStartValue(bar.value())
+        self._wheel_anim.setEndValue(target)
+        self._wheel_anim.start()
+        event.accept()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat("application/x-promptdock-id"):
@@ -880,79 +966,168 @@ class PromptListWidget(QListWidget):
         event.accept()
 
 
+def _highlight_html(text: str, keyword: str) -> str:
+    import html as _html
+    escaped = _html.escape(text or "")
+    if not keyword:
+        return escaped
+    pattern = re.compile(re.escape(_html.escape(keyword)), re.IGNORECASE)
+    return pattern.sub(
+        lambda m: '<span style="background-color:#ffe58f;color:#1e1e2e;border-radius:2px;">{}</span>'.format(m.group(0)),
+        escaped,
+    )
+
+
 class PromptCard(QFrame):
     edit_requested = Signal(str)
     delete_requested = Signal(str)
     color_changed = Signal(str, str)
     pin_toggled = Signal(str)
     folder_changed = Signal(str, str)
+    copied = Signal(str)
+    expand_toggled = Signal()
 
-    def __init__(self, prompt: dict, folders, parent=None):
+    def __init__(self, prompt: dict, folders, in_folder=False, folder_name="", keyword="", parent=None):
         super().__init__(parent)
         self.prompt = prompt
         self.folders = folders
+        self.in_folder = in_folder
+        self.folder_name = folder_name or prompt.get("folder", "")
+        self.keyword = keyword or ""
+        self._expanded = False
+        self._selected = False
         self.setObjectName("Card")
         self.setCursor(Qt.PointingHandCursor)
         self.setAcceptDrops(True)
         self._press_pos = None
         self._segment_areas = []  # [(widget, content, preview_label)]
+        self._extra_widgets = []
         self._build_ui()
         self._apply_color()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(6)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(10 if self.in_folder else 0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        header_row = QHBoxLayout()
-        title = QLabel(self.prompt["title"])
-        title.setObjectName("CardTitle")
-        title.setWordWrap(True)
-        header_row.addWidget(title, 1)
-        if self.prompt.get("pinned"):
-            badge = QLabel("置顶")
-            badge.setObjectName("PinBadge")
-            header_row.addWidget(badge, 0, Qt.AlignRight)
-        layout.addLayout(header_row)
+        self.card_box = QFrame()
+        self.card_box.setObjectName("CardBox")
+        outer.addWidget(self.card_box, 1)
+
+        layout = QVBoxLayout(self.card_box)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(4)
 
         segments = self.prompt.get("segments", [])
         multi = len(segments) > 1
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(6)
+        title_html = _highlight_html(self.prompt["title"], self.keyword)
+        title = QLabel(title_html)
+        title.setObjectName("CardTitle")
+        title.setTextFormat(Qt.RichText)
+        title.setWordWrap(True)
+        header_row.addWidget(title, 1)
+
+        if self.prompt.get("pinned"):
+            badge = QLabel("📌置顶")
+            badge.setObjectName("PinBadge")
+            header_row.addWidget(badge, 0, Qt.AlignRight | Qt.AlignVCenter)
+
+        if multi:
+            self.seg_btn = QPushButton(f"{len(segments)}段 ▾")
+            self.seg_btn.setCursor(Qt.PointingHandCursor)
+            self.seg_btn.setStyleSheet(
+                "QPushButton { background-color: rgba(67,97,238,0.12); color: #4361ee; border: none; "
+                "border-radius: 8px; padding: 1px 7px; font-size: 10px; font-weight: 600; }"
+                "QPushButton:hover { background-color: rgba(67,97,238,0.22); }"
+            )
+            self.seg_btn.clicked.connect(self._toggle_expand)
+            header_row.addWidget(self.seg_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        else:
+            self.seg_btn = None
+
+        layout.addLayout(header_row)
+
+        # 悬停显示完整内容，紧凑卡片不占空间也能看全
+        full_tip_parts = []
+        for idx, seg in enumerate(segments, 1):
+            c_txt = seg.get("content", "")
+            full_tip_parts.append(f"【提示词{idx}】\n{c_txt}" if multi else c_txt)
+        self.setToolTip("\n\n".join(full_tip_parts)[:900] + "\n\n（点击卡片直接复制，右键更多操作）")
+
         for idx, seg in enumerate(segments, start=1):
             seg_widget = QWidget()
             seg_layout = QVBoxLayout(seg_widget)
-            seg_layout.setContentsMargins(0, 0, 0, 0)
-            seg_layout.setSpacing(2)
+            seg_layout.setContentsMargins(0, 2 if idx > 1 else 0, 0, 0)
+            seg_layout.setSpacing(1)
 
             if multi:
                 tag = QLabel("提示词{}".format(idx))
                 tag.setObjectName("SegTitle")
                 seg_layout.addWidget(tag)
+                if idx == 1:
+                    tag.setVisible(False)
+                    self._first_tag = tag
 
-            preview_text = seg["content"].replace("\n", " ")
-            limit = 42 if multi else 50
-            if len(preview_text) > limit:
-                preview_text = preview_text[:limit] + "…"
-            preview = QLabel(preview_text)
+            raw_line = seg["content"].replace("\n", " ").strip()
+            limit = 24 if not self.keyword else 30
+            if len(raw_line) > limit:
+                raw_line = raw_line[:limit] + "…"
+            preview = QLabel(_highlight_html(raw_line, self.keyword))
             preview.setObjectName("CardPreview")
-            preview.setWordWrap(True)
-            preview.setToolTip("点击即可复制")
+            preview.setTextFormat(Qt.RichText)
+            preview.setWordWrap(False)
+            preview.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
             seg_layout.addWidget(preview)
 
             layout.addWidget(seg_widget)
-            self._segment_areas.append((seg_widget, seg["content"], preview))
+            self._segment_areas.append((seg_widget, seg["content"], preview, _highlight_html(raw_line, self.keyword)))
+            if idx > 1:
+                seg_widget.setVisible(False)
+                self._extra_widgets.append(seg_widget)
+
+    def _toggle_expand(self):
+        self._expanded = not self._expanded
+        for w in self._extra_widgets:
+            w.setVisible(self._expanded)
+        if hasattr(self, "_first_tag"):
+            self._first_tag.setVisible(self._expanded)
+        if self.seg_btn:
+            cnt = len(self.prompt.get("segments", []))
+            self.seg_btn.setText(f"{cnt}段 ▴" if self._expanded else f"{cnt}段 ▾")
+        self.expand_toggled.emit()
+
+    def set_selected(self, selected: bool):
+        if self._selected != selected:
+            self._selected = selected
+            self._apply_color()
 
     def _apply_color(self):
         color = self.prompt.get("color", CARD_COLOR_DEFAULT)
-        self.setStyleSheet(
-            "QFrame#Card {{ background-color: {c}; border-radius:12px; border:1px solid transparent; }}"
-            "QFrame#Card:hover {{ border:1px solid #d8dcf5; }}".format(c=color)
+        if self._selected:
+            border_rule = "border: 1.5px solid #4361ee;"
+        elif self.in_folder and self.folder_name:
+            fc = _folder_color(self.folder_name)
+            border_rule = f"border: 1px solid rgba(0,0,0,0.04); border-left: 3px solid {fc};"
+        else:
+            border_rule = "border: 1px solid rgba(0,0,0,0.04);"
+        self.card_box.setStyleSheet(
+            "QFrame#CardBox {{ background-color: {c}; border-radius: 10px; {b} }}"
+            "QFrame#CardBox:hover {{ border: 1px solid #8a96e8; }}".format(c=color, b=border_rule)
         )
 
-    def _copy(self, text, preview_label):
+    def _copy(self, text, preview_label, orig_html):
         QApplication.clipboard().setText(text)
-        original = preview_label.text()
-        preview_label.setText("✅ 已复制")
-        QTimer.singleShot(900, lambda: preview_label.setText(original))
+        preview_label.setText('<span style="color:#16a34a;font-weight:600;">✅ 已复制</span>')
+        self.copied.emit(self.prompt["id"])
+        QTimer.singleShot(850, lambda: preview_label.setText(orig_html))
+
+    def copy_primary(self):
+        if self._segment_areas:
+            _, content, preview_label, orig_html = self._segment_areas[0]
+            self._copy(content, preview_label, orig_html)
 
     def matches(self, keyword: str) -> bool:
         return prompt_matches(self.prompt, keyword)
@@ -972,7 +1147,7 @@ class PromptCard(QFrame):
 
     def _start_drag(self):
         prompt_id = self.prompt["id"]
-        self._press_pos = None  # 防止拖拽结束后又被当成一次点击触发复制
+        self._press_pos = None
         drag = QDrag(self)
         mime = QMimeData()
         mime.setData("application/x-promptdock-id", prompt_id.encode("utf-8"))
@@ -999,13 +1174,12 @@ class PromptCard(QFrame):
         super().mouseReleaseEvent(event)
 
     def _copy_at(self, pos):
-        for widget, content, preview_label in self._segment_areas:
-            if widget.geometry().contains(pos):
-                self._copy(content, preview_label)
+        box_pos = self.card_box.mapFromParent(pos)
+        for widget, content, preview_label, orig_html in self._segment_areas:
+            if widget.isVisible() and widget.geometry().contains(box_pos):
+                self._copy(content, preview_label, orig_html)
                 return
-        if self._segment_areas:
-            widget, content, preview_label = self._segment_areas[0]
-            self._copy(content, preview_label)
+        self.copy_primary()
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -3230,6 +3404,7 @@ class KuKuToolEngine:
     CUSTOM_B64   = "ZYXABCDEFGHIJKLMNOPQRSTUVWzyxabcdefghijklmnopqrstuvw9876543210-_"
     CACHED_HASH  = "970b03"
     PREFERRED_TRUST_ENV = False
+    LAST_HEAL_TS = 0.0
     _MEM_CACERT_PEM = None
     _ORIG_CERTIFI_PATH = None
 
@@ -3298,6 +3473,41 @@ class KuKuToolEngine:
                 pass
             return persistent_ca
         return ""
+
+    @classmethod
+    def _state_path(cls):
+        return os.path.join(get_data_dir(), "engine_state.json")
+
+    @classmethod
+    def load_state(cls):
+        """读取上次运行学到的最佳通道与授权密钥，避免每次启动都要重新探测"""
+        try:
+            with open(cls._state_path(), "r", encoding="utf-8") as f:
+                st = json.load(f)
+            h = str(st.get("hash") or "")
+            if re.fullmatch(r"[a-f0-9]{6}", h):
+                cls.CACHED_HASH = h
+            if "trust_env" in st:
+                cls.PREFERRED_TRUST_ENV = bool(st["trust_env"])
+        except Exception:
+            pass
+
+    @classmethod
+    def save_state(cls):
+        try:
+            with open(cls._state_path(), "w", encoding="utf-8") as f:
+                json.dump({"hash": cls.CACHED_HASH, "trust_env": cls.PREFERRED_TRUST_ENV, "ts": int(time.time())}, f)
+        except Exception:
+            pass
+
+    @classmethod
+    def auto_heal(cls) -> dict:
+        """静默自愈：重建证书链、刷新授权密钥、重新选择最快通道，并记住结果"""
+        try:
+            cls.repair_tls_certificates()
+        except Exception:
+            pass
+        return cls.diagnose_and_repair()
 
     @classmethod
     def ensure_ca_bundle(cls):
@@ -3417,7 +3627,7 @@ class KuKuToolEngine:
             ent_resp = session.post(
                 "https://dy.kukutool.com/api/parse-entitlement-status",
                 json={"uwx_id": uwx_id, "page_path": "/", "request_url": url},
-                timeout=6
+                timeout=(4, 6)
             )
             if ent_resp.ok:
                 quote_token = ent_resp.json().get("quoteToken")
@@ -3426,12 +3636,12 @@ class KuKuToolEngine:
 
         current_hash = cls.CACHED_HASH
         auth_url = f"https://dy.kukutool.com/api/auth-{current_hash}"
-        auth_resp = session.post(auth_url, json={"requestURL": url, "pagePath": "/", "mode": "single"}, timeout=10)
+        auth_resp = session.post(auth_url, json={"requestURL": url, "pagePath": "/", "mode": "single"}, timeout=(5, 10))
 
         if auth_resp.status_code in (404, 403) or f"k_{current_hash}" not in auth_resp.text:
             current_hash = cls.resolve_hash(session)
             auth_url = f"https://dy.kukutool.com/api/auth-{current_hash}"
-            auth_resp = session.post(auth_url, json={"requestURL": url, "pagePath": "/", "mode": "single"}, timeout=10)
+            auth_resp = session.post(auth_url, json={"requestURL": url, "pagePath": "/", "mode": "single"}, timeout=(5, 10))
 
         auth_data = auth_resp.json()
         auth_key = auth_data.get(f"k_{current_hash}")
@@ -3467,7 +3677,7 @@ class KuKuToolEngine:
             f"i_{current_hash}": iv
         }
 
-        parse_resp = session.post("https://dy.kukutool.com/api/parse", json=parse_payload, timeout=15)
+        parse_resp = session.post("https://dy.kukutool.com/api/parse", json=parse_payload, timeout=(5, 15))
         res = parse_resp.json()
 
         if res.get("status") == 0 and res.get("encrypt") and res.get("data"):
@@ -3626,6 +3836,8 @@ class KuKuToolEngine:
         except Exception:
             pass
 
+        cls.LAST_HEAL_TS = time.time()
+        cls.save_state()
         return {
             "best_channel": "直连通道" if not best_trust else "代理通道",
             "latency_ms": best_latency_ms or 0,
@@ -3636,34 +3848,7 @@ class KuKuToolEngine:
         }
 
     @classmethod
-    def parse(cls, input_text: str) -> dict:
-        cls.ensure_ca_bundle()
-        url = cls.extract_first_url(input_text)
-        if not url:
-            raise ValueError("未检测到有效网页链接，请粘贴完整的分享文字或网址！")
-
-        overseas = any(d in url.lower() for d in ("youtube.com", "youtu.be", "tiktok.com", "instagram.com", "twitter.com", "x.com", "facebook.com"))
-        if overseas:
-            trust_order = [True, False]
-        else:
-            pref = cls.PREFERRED_TRUST_ENV
-            trust_order = [pref, not pref]
-
-        last_err = None
-        for trust_env in trust_order:
-            try:
-                return cls._parse_via_kuku(url, trust_env=trust_env)
-            except Exception as e:
-                if "certificate" in str(e).lower() or "cacert.pem" in str(e).lower() or "tls" in str(e).lower():
-                    cls.repair_tls_certificates()
-                    try:
-                        return cls._parse_via_kuku(url, trust_env=trust_env)
-                    except Exception as e2:
-                        last_err = e2
-                else:
-                    last_err = e
-
-        # 若 KuKuTool 偶发上游故障，自动启用内置直连解析兜底
+    def _parse_fallbacks(cls, url: str):
         low_url = url.lower()
         try:
             if "douyin.com" in low_url or "iesdouyin.com" in low_url:
@@ -3674,12 +3859,54 @@ class KuKuToolEngine:
                 return cls._fallback_parse_xiaohongshu(url)
         except Exception:
             pass
+        return None
+
+    @classmethod
+    def parse(cls, input_text: str) -> dict:
+        cls.ensure_ca_bundle()
+        url = cls.extract_first_url(input_text)
+        if not url:
+            raise ValueError("未检测到有效网页链接，请粘贴完整的分享文字或网址！")
+
+        overseas = any(d in url.lower() for d in ("youtube.com", "youtu.be", "tiktok.com", "instagram.com", "twitter.com", "x.com", "facebook.com"))
+
+        def _order():
+            if overseas:
+                return [True, False]
+            pref = cls.PREFERRED_TRUST_ENV
+            return [pref, not pref]
+
+        last_err = None
+        for attempt in range(2):
+            for trust_env in _order():
+                try:
+                    data = cls._parse_via_kuku(url, trust_env=trust_env)
+                    # 记住真正能用的通道，下次启动直接走它
+                    if not overseas and trust_env != cls.PREFERRED_TRUST_ENV:
+                        cls.PREFERRED_TRUST_ENV = trust_env
+                        cls.save_state()
+                    return data
+                except Exception as e:
+                    last_err = e
+
+            # 解析服务异常时，先走内置直连解析兜底（无需等待）
+            fb = cls._parse_fallbacks(url)
+            if fb:
+                return fb
+
+            if attempt == 0:
+                # 两个通道都失败：自动执行一次完整修复（等同点击「一键修复」），然后自动重试
+                try:
+                    cls.auto_heal()
+                except Exception:
+                    pass
 
         raise RuntimeError(str(last_err) if last_err else "解析失败，请检查链接是否有效")
 
 
-# 启动时立即初始化并持久化 TLS CA 证书链，防止临时目录被系统清理导致报错
+# 启动时立即初始化并持久化 TLS CA 证书链，并读取上次学到的最佳通道与授权密钥
 KuKuToolEngine.repair_tls_certificates()
+KuKuToolEngine.load_state()
 
 
 def _build_media_download_headers(url: str, custom_headers: dict = None) -> dict:
@@ -5316,6 +5543,8 @@ class MainWindow(QMainWindow):
         self.prompts = load_prompts()
         self.settings = load_settings()
         self.collapsed_groups = set(self.settings.get("collapsed_groups", []))
+        self.active_tab = "all"  # "all" | "recent" | "pinned" | "folder:<name>"
+        self._selected_card_row = -1
         self._hotkey_ready = False
 
         # Qt.Tool：不进 Windows 任务栏，只用托盘
@@ -5364,6 +5593,7 @@ class MainWindow(QMainWindow):
         self._cloud_sync_timer.start()
         QTimer.singleShot(2500, self.sync_cloud_silently)
         QTimer.singleShot(4500, self.check_update_silently)
+        QTimer.singleShot(3000, self.warmup_extractor_engine)
 
         # 启动后若停留在边缘则自动吸附
         QTimer.singleShot(600, self._check_edge_dock)
@@ -5591,16 +5821,34 @@ class MainWindow(QMainWindow):
         body.setContentsMargins(10, 6, 10, 2)
         body.setSpacing(4)
 
+        self.tab_scroll = QScrollArea()
+        self.tab_scroll.setWidgetResizable(True)
+        self.tab_scroll.setFixedHeight(32)
+        self.tab_scroll.setFrameShape(QFrame.NoFrame)
+        self.tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tab_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tab_scroll.setStyleSheet("background: transparent;")
+        self.tab_container = QWidget()
+        self.tab_container.setStyleSheet("background: transparent;")
+        self.tab_layout = QHBoxLayout(self.tab_container)
+        self.tab_layout.setContentsMargins(2, 2, 2, 2)
+        self.tab_layout.setSpacing(6)
+        self.tab_scroll.setWidget(self.tab_container)
+        body.addWidget(self.tab_scroll)
+
         self.list_widget = PromptListWidget()
         self.list_widget.setFrameShape(QFrame.NoFrame)
         self.list_widget.setSelectionMode(QAbstractItemView.NoSelection)
         self.list_widget.setFocusPolicy(Qt.NoFocus)
-        self.list_widget.setSpacing(8)
+        self.list_widget.setSpacing(5)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list_widget.setViewportMargins(0, 0, 6, 0)
         self.list_widget.setDragDropMode(QAbstractItemView.NoDragDrop)
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._on_list_context_menu)
         self.list_widget.card_dropped.connect(self._on_card_dropped)
+
+        self.title_bar.search_box.installEventFilter(self)
 
         self.body_stack = QStackedWidget()
         self.body_stack.addWidget(self.list_widget)
@@ -5808,69 +6056,210 @@ class MainWindow(QMainWindow):
         save_settings(self.settings)
         self.render_cards()
 
-    # -- 卡片渲染（分组 + 折叠 + 搜索） -----------------------------------------
-    def render_cards(self):
+    # -- 标签栏 / 最近使用 / 键盘导航 -----------------------------------------
+    def _rebuild_tab_bar(self, active_prompts, known_folders):
+        while self.tab_layout.count():
+            it = self.tab_layout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+
+        recent_ids = self.settings.get("recent_ids", [])
+        active_id_set = {p["id"] for p in active_prompts}
+        recent_cnt = sum(1 for pid in recent_ids if pid in active_id_set)
+        pinned_cnt = sum(1 for p in active_prompts if p.get("pinned"))
+
+        tabs = [("all", f"全部 {len(active_prompts)}")]
+        if recent_cnt > 0:
+            tabs.append(("recent", f"🕒 最近 {recent_cnt}"))
+        if pinned_cnt > 0:
+            tabs.append(("pinned", f"📌 置顶 {pinned_cnt}"))
+        for name in known_folders:
+            cnt = sum(1 for p in active_prompts if p.get("folder") == name)
+            tabs.append((f"folder:{name}", f"📁 {name} {cnt}"))
+
+        if self.active_tab not in {k for k, _ in tabs}:
+            self.active_tab = "all"
+
+        _, ac = THEME_MAP.get(self.settings.get("theme", "默认"), THEME_MAP["默认"])
+        for key, text in tabs:
+            btn = QPushButton(text)
+            btn.setObjectName("TabChip")
+            btn.setCheckable(True)
+            is_active = (key == self.active_tab)
+            btn.setChecked(is_active)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            if is_active:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {ac}; color: #ffffff; border: none; "
+                    f"border-radius: 10px; padding: 3px 10px; font-size: 11px; font-weight: 600; }}"
+                )
+            else:
+                btn.setStyleSheet(
+                    "QPushButton { background-color: #eef0f6; color: #4e5368; border: none; "
+                    "border-radius: 10px; padding: 3px 9px; font-size: 11px; font-weight: 500; }"
+                    "QPushButton:hover { background-color: #dfe3f2; color: #2b2f42; }"
+                )
+            btn.clicked.connect(lambda _=False, k=key: self._switch_tab(k))
+            self.tab_layout.addWidget(btn)
+        self.tab_layout.addStretch(1)
+
+    def _switch_tab(self, tab_key):
+        self.active_tab = tab_key
+        self._selected_card_row = -1
+        self.list_widget.stop_smooth()
+        self.list_widget.verticalScrollBar().setValue(0)
+        self.render_cards(preserve_scroll=False)
+
+    def _record_recent(self, prompt_id):
+        rec = [pid for pid in self.settings.get("recent_ids", []) if pid != prompt_id]
+        rec.insert(0, prompt_id)
+        self.settings["recent_ids"] = rec[:15]
+        save_settings(self.settings)
+
+    def _on_card_expand_toggled(self):
+        for r in range(self.list_widget.count()):
+            it = self.list_widget.item(r)
+            w = self.list_widget.itemWidget(it)
+            if isinstance(w, PromptCard):
+                w.adjustSize()
+                it.setSizeHint(w.sizeHint())
+
+    def _move_card_selection(self, delta: int):
+        card_rows = [
+            r for r in range(self.list_widget.count())
+            if isinstance(self.list_widget.itemWidget(self.list_widget.item(r)), PromptCard)
+        ]
+        if not card_rows:
+            return
+        if self._selected_card_row not in card_rows:
+            new_row = card_rows[0] if delta >= 0 else card_rows[-1]
+        else:
+            idx = card_rows.index(self._selected_card_row)
+            new_row = card_rows[(idx + delta) % len(card_rows)]
+        for r in card_rows:
+            w = self.list_widget.itemWidget(self.list_widget.item(r))
+            w.set_selected(r == new_row)
+        self._selected_card_row = new_row
+        self.list_widget.scrollToItem(self.list_widget.item(new_row), QAbstractItemView.EnsureVisible)
+
+    def eventFilter(self, obj, event):
+        if hasattr(self, "title_bar") and obj is self.title_bar.search_box and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Down:
+                self._move_card_selection(1)
+                return True
+            if event.key() == Qt.Key_Up:
+                self._move_card_selection(-1)
+                return True
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if self._selected_card_row >= 0:
+                    w = self.list_widget.itemWidget(self.list_widget.item(self._selected_card_row))
+                    if isinstance(w, PromptCard):
+                        w.copy_primary()
+                        return True
+                self._move_card_selection(1)
+                if self._selected_card_row >= 0:
+                    w = self.list_widget.itemWidget(self.list_widget.item(self._selected_card_row))
+                    if isinstance(w, PromptCard):
+                        w.copy_primary()
+                return True
+        return super().eventFilter(obj, event)
+
+    # -- 卡片渲染（分组 + 折叠 + 搜索 + 保持滚动位置） --------------------------
+    def render_cards(self, preserve_scroll=True):
+        bar = self.list_widget.verticalScrollBar()
+        saved_scroll = bar.value() if preserve_scroll else 0
+        self.list_widget.stop_smooth()
         self.list_widget.clear()
+
         keyword = self.title_bar.search_box.text().strip()
         search_active = bool(keyword)
-
         known_folders = self.get_all_folders()
+        active_prompts = [p for p in self.prompts if not p.get("is_deleted", False)]
+
+        self._rebuild_tab_bar(active_prompts, known_folders)
 
         def sorted_by_pin(items):
-            pinned_items = [p for p in items if p.get("pinned")]
-            other_items = [p for p in items if not p.get("pinned")]
-            return pinned_items + other_items
+            return [p for p in items if p.get("pinned")] + [p for p in items if not p.get("pinned")]
 
-        active_prompts = [p for p in self.prompts if not p.get("is_deleted", False)]
-        groups = []
-        for name in known_folders:
-            folder_items = [p for p in active_prompts if p.get("folder") == name]
-            groups.append(("folder:{}".format(name), name, sorted_by_pin(folder_items)))
-        uncategorized = [p for p in active_prompts if not p.get("folder")]
-        groups.append((GROUP_UNCATEGORIZED, None, sorted_by_pin(uncategorized)))
+        def _append_card(p, group_meta, in_folder=False, folder_name=""):
+            card = PromptCard(p, known_folders, in_folder=in_folder, folder_name=folder_name, keyword=keyword)
+            card.edit_requested.connect(self.edit_prompt)
+            card.delete_requested.connect(self.delete_prompt)
+            card.color_changed.connect(self.change_prompt_color)
+            card.pin_toggled.connect(self.toggle_pin_prompt)
+            card.folder_changed.connect(self.change_prompt_folder)
+            card.copied.connect(self._record_recent)
+            card.expand_toggled.connect(self._on_card_expand_toggled)
+            item = QListWidgetItem()
+            item.setFlags(Qt.ItemIsEnabled)
+            item.setData(Qt.UserRole, {"type": "card", "group": group_meta})
+            item.setSizeHint(card.sizeHint())
+            self.list_widget.addItem(item)
+            self.list_widget.setItemWidget(item, card)
 
-        for group_key, label, items in groups:
-            if search_active:
-                visible_items = [p for p in items if prompt_matches(p, keyword)]
-                if not visible_items:
+        if self.active_tab == "recent" and not search_active:
+            by_id = {p["id"]: p for p in active_prompts}
+            for pid in self.settings.get("recent_ids", []):
+                p = by_id.get(pid)
+                if p:
+                    fn = p.get("folder", "")
+                    gm = self._group_meta(f"folder:{fn}" if fn else GROUP_UNCATEGORIZED, fn or None)
+                    _append_card(p, gm, in_folder=bool(fn), folder_name=fn)
+        elif self.active_tab == "pinned" and not search_active:
+            for p in active_prompts:
+                if p.get("pinned"):
+                    fn = p.get("folder", "")
+                    gm = self._group_meta(f"folder:{fn}" if fn else GROUP_UNCATEGORIZED, fn or None)
+                    _append_card(p, gm, in_folder=bool(fn), folder_name=fn)
+        else:
+            groups = []
+            for name in known_folders:
+                if self.active_tab.startswith("folder:") and not search_active and self.active_tab != f"folder:{name}":
                     continue
-            else:
-                visible_items = items
-                if not items and group_key == GROUP_UNCATEGORIZED:
-                    continue
+                folder_items = [p for p in active_prompts if p.get("folder") == name]
+                groups.append((f"folder:{name}", name, sorted_by_pin(folder_items)))
 
-            if label is not None:
-                collapsed = group_key in self.collapsed_groups
-                is_folder = group_key.startswith("folder:")
-                header_item = QListWidgetItem()
-                header_item.setFlags(Qt.ItemIsEnabled)
-                header_item.setData(Qt.UserRole, self._group_meta(group_key, label))
-                header_widget = FolderHeader(group_key, label, len(items), collapsed, is_folder=is_folder)
-                header_widget.toggled.connect(self._toggle_group)
-                self.list_widget.addItem(header_item)
-                header_item.setSizeHint(header_widget.sizeHint())
-                self.list_widget.setItemWidget(header_item, header_widget)
+            if not self.active_tab.startswith("folder:") or search_active:
+                uncategorized = [p for p in active_prompts if not p.get("folder")]
+                groups.append((GROUP_UNCATEGORIZED, None, sorted_by_pin(uncategorized)))
 
-                if collapsed and not search_active:
-                    continue
+            for group_key, label, items in groups:
+                if search_active:
+                    visible_items = [p for p in items if prompt_matches(p, keyword)]
+                    if not visible_items:
+                        continue
+                else:
+                    visible_items = items
+                    if not items and group_key == GROUP_UNCATEGORIZED:
+                        continue
 
-            group_meta = self._group_meta(group_key, label)
-            for p in visible_items:
-                card = PromptCard(p, known_folders)
-                card.edit_requested.connect(self.edit_prompt)
-                card.delete_requested.connect(self.delete_prompt)
-                card.color_changed.connect(self.change_prompt_color)
-                card.pin_toggled.connect(self.toggle_pin_prompt)
-                card.folder_changed.connect(self.change_prompt_folder)
-                item = QListWidgetItem()
-                item.setFlags(Qt.ItemIsEnabled)
-                item.setData(Qt.UserRole, {"type": "card", "group": group_meta})
-                item.setSizeHint(card.sizeHint())
-                self.list_widget.addItem(item)
-                self.list_widget.setItemWidget(item, card)
+                in_folder = group_key.startswith("folder:")
+                is_single_folder_tab = (self.active_tab == group_key and not search_active)
+
+                if label is not None and not is_single_folder_tab:
+                    collapsed = group_key in self.collapsed_groups
+                    header_item = QListWidgetItem()
+                    header_item.setFlags(Qt.ItemIsEnabled)
+                    header_item.setData(Qt.UserRole, self._group_meta(group_key, label))
+                    header_widget = FolderHeader(group_key, label, len(items), collapsed, is_folder=in_folder)
+                    header_widget.toggled.connect(self._toggle_group)
+                    self.list_widget.addItem(header_item)
+                    header_item.setSizeHint(header_widget.sizeHint())
+                    self.list_widget.setItemWidget(header_item, header_widget)
+
+                    if collapsed and not search_active:
+                        continue
+
+                group_meta = self._group_meta(group_key, label)
+                for p in visible_items:
+                    _append_card(p, group_meta, in_folder=in_folder, folder_name=label or "")
 
         self.list_widget.viewport().update()
         self.list_widget.update()
+        if preserve_scroll and saved_scroll > 0:
+            QTimer.singleShot(0, lambda v=saved_scroll: bar.setValue(min(v, bar.maximum())))
 
     @staticmethod
     def _group_meta(group_key, label):
@@ -6057,6 +6446,24 @@ class MainWindow(QMainWindow):
         dlg = UpdateDialog(self, initial_info=initial_info)
         _center_window_on_screen(dlg)
         dlg.exec()
+
+    def warmup_extractor_engine(self, force=False):
+        """后台静默预热视频提取通道（距上次修复超过 10 分钟才会重新执行）"""
+        if not force and (time.time() - KuKuToolEngine.LAST_HEAL_TS) < 600:
+            return
+        if getattr(self, "_warmup_running", False):
+            return
+        self._warmup_running = True
+
+        def _job():
+            try:
+                KuKuToolEngine.auto_heal()
+            except Exception:
+                pass
+            finally:
+                self._warmup_running = False
+
+        threading.Thread(target=_job, daemon=True).start()
 
     def check_update_silently(self):
         self._bg_update_worker = UpdateCheckWorker()
@@ -6260,6 +6667,7 @@ class MainWindow(QMainWindow):
         self.draft_pad.load()
         self.body_stack.setCurrentWidget(self.draft_pad)
         self.in_draft_mode = True
+        self.tab_scroll.setVisible(False)
         self.title_bar.update_draft_state(True)
         if not self.isVisible():
             self.show()
@@ -6271,6 +6679,7 @@ class MainWindow(QMainWindow):
         self.draft_pad.flush_save()
         self.body_stack.setCurrentWidget(self.list_widget)
         self.in_draft_mode = False
+        self.tab_scroll.setVisible(True)
         self.title_bar.update_draft_state(False)
 
     def toggle_media_extractor(self):
@@ -6284,6 +6693,7 @@ class MainWindow(QMainWindow):
             main_w = self.width()
             if not self._media_extractor.isVisible():
                 self._media_extractor.clear_all()
+                self.warmup_extractor_engine()
             if was_main_visible:
                 screen_obj = QGuiApplication.screenAt(main_pos) or QApplication.primaryScreen()
                 sg = screen_obj.availableGeometry()

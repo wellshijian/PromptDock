@@ -1,7 +1,7 @@
 {
-  "version": "1.0.2",
-  "notes": "PromptDock v1.0.2 重要更新：\\n1. 修复在线更新覆盖重启时偶发 Failed to load Python DLL (_MEIPASS2) 报错\\n2. 优化国内 CDN 下载通道（优先极速 CDN 节点 + 实时网速显示 + 低速自动熔断切换，下载提速 10 倍以上）",
-  "sha256": "8d55f7c6f96a76eacd95c3705e270b964059ce762c58c5adac494676fa184c09",
+  "version": "1.0.3",
+  "notes": "PromptDock v1.0.3 重磅更新：\\n1. 全新丝滑主界面：新增文件夹胶囊标签栏、最近使用、带图标/彩色角标的层级文件夹条、文件夹内缩进与彩色左竖线、紧凑卡片（一屏展示更多内容，多段可原地展开）、像素级惯性平滑滚动、保持滚动位置及 ↑↓/Enter 键盘快选\\n2. 视频无水印提取免修复直用：启动与打开时后台静默预热并记住最佳通道与密钥，解析失败时自动静默修复重试，无需每次手动点一键修复",
+  "sha256": "2b0eeab0b1f4dc1ddce573c60b8e9c0451a112ffe2feb64567a6acb2d90c8760",
   "download_url": "https://github.com/wellshijian/PromptDock/releases/latest/download/PromptDock.exe",
-  "published_at": "2026-11-16T15:36:39+08:00"
+  "published_at": "2026-11-17T14:44:12+08:00"
 }
