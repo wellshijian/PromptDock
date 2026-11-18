@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -3962,9 +3962,6 @@ class KuKuToolEngine:
             raise ValueError("未检测到有效网页链接，请粘贴完整的分享文字或网址！")
 
         low_u = url.lower()
-        if "weixin.qq.com/sph" in low_u or "channels.weixin.qq.com" in low_u:
-            raise ValueError("暂不支持微信视频号链接：受微信端加密与鉴权限制，目前支持抖音、小红书、快手、B站、TikTok 等主流平台。")
-
         overseas = any(d in low_u for d in ("youtube.com", "youtu.be", "tiktok.com", "instagram.com", "twitter.com", "x.com", "facebook.com"))
 
         def _order():

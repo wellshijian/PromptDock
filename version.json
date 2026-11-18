@@ -1,7 +1,7 @@
 {
-  "version": "1.0.7",
-  "notes": "PromptDock v1.0.7 修复更新：\\n1. 修复多次解析失败时界面重复叠加错误卡片的问题\\n2. 明确识别暂不支持的微信视频号（weixin.qq.com/sph）链接并给出清晰提示，避免误导重试",
-  "sha256": "ec99c4a799a346965ea19320a38abe59c3c3d64ab9692c8ce5089878729092b4",
+  "version": "1.0.8",
+  "notes": "恢复支持微信视频号链接无水印解析，同步最新解析通道",
+  "sha256": "36d3906d9f2acf05b57ba958a20148aab0d06c45182047aa545095b96d34b6db",
   "download_url": "https://github.com/wellshijian/PromptDock/releases/latest/download/PromptDock.exe",
-  "published_at": "2026-11-18T09:31:26+08:00"
+  "published_at": "2026-11-18T15:51:21+08:00"
 }
