@@ -1,7 +1,7 @@
 {
-  "version": "1.0.6",
-  "notes": "PromptDock v1.0.6 更新：\\n1. 全新精确拖拽排序：支持蓝色实时插入指示线、边缘自动滚动及同组内任意位置精确插队\\n2. 文件夹右键增强：支持置顶文件夹、自定义文件夹颜色及批量合并移动到其他文件夹\\n3. 精简卡片右键菜单（保留列表空白处右键新建提示词与文件夹）",
-  "sha256": "dfc32fc842ec1fe9c4a8152f0521d44fca750e4af6f542383b40916b3685b5b6",
+  "version": "1.0.7",
+  "notes": "PromptDock v1.0.7 修复更新：\\n1. 修复多次解析失败时界面重复叠加错误卡片的问题\\n2. 明确识别暂不支持的微信视频号（weixin.qq.com/sph）链接并给出清晰提示，避免误导重试",
+  "sha256": "ec99c4a799a346965ea19320a38abe59c3c3d64ab9692c8ce5089878729092b4",
   "download_url": "https://github.com/wellshijian/PromptDock/releases/latest/download/PromptDock.exe",
-  "published_at": "2026-11-17T15:13:50+08:00"
+  "published_at": "2026-11-18T09:31:26+08:00"
 }

@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -3961,7 +3961,11 @@ class KuKuToolEngine:
         if not url:
             raise ValueError("未检测到有效网页链接，请粘贴完整的分享文字或网址！")
 
-        overseas = any(d in url.lower() for d in ("youtube.com", "youtu.be", "tiktok.com", "instagram.com", "twitter.com", "x.com", "facebook.com"))
+        low_u = url.lower()
+        if "weixin.qq.com/sph" in low_u or "channels.weixin.qq.com" in low_u:
+            raise ValueError("暂不支持微信视频号链接：受微信端加密与鉴权限制，目前支持抖音、小红书、快手、B站、TikTok 等主流平台。")
+
+        overseas = any(d in low_u for d in ("youtube.com", "youtu.be", "tiktok.com", "instagram.com", "twitter.com", "x.com", "facebook.com"))
 
         def _order():
             if overseas:
@@ -4750,6 +4754,13 @@ class MediaExtractorDialog(QDialog):
             if w:
                 w.deleteLater()
 
+        if self.parse_worker is not None:
+            try:
+                self.parse_worker.finished.disconnect()
+                self.parse_worker.failed.disconnect()
+            except Exception:
+                pass
+
         self.parse_worker = MediaParseWorker(text)
         self.parse_worker.finished.connect(self.on_parse_success)
         self.parse_worker.failed.connect(self.on_parse_failed)
@@ -4766,34 +4777,47 @@ class MediaExtractorDialog(QDialog):
         self.parse_btn.setEnabled(True)
         self.status_label.setText(f"❌ {err_msg}")
         self.status_label.setStyleSheet("color: #f38ba8; font-size: 12px;")
-        
+
+        while self.scroll_layout.count():
+            item = self.scroll_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
         err_box = QFrame()
         err_box.setStyleSheet("background-color: #2b2d42; border: 1px solid #45475a; border-radius: 10px; padding: 16px;")
         err_vbox = QVBoxLayout(err_box)
         err_vbox.setSpacing(12)
 
-        err_lbl = QLabel(f"解析出现问题：\n{err_msg}\n\n你可以点击下方【🛠️ 一键修复并重试】，自动检测最快网络通道并同步最新解析协议密钥。")
-        err_lbl.setStyleSheet("color: #f38ba8; font-size: 13px; line-height: 1.5; border: none;")
-        err_lbl.setWordWrap(True)
-        err_vbox.addWidget(err_lbl)
+        is_unsupported = ("暂不支持" in err_msg) or ("未检测到有效" in err_msg)
+        if is_unsupported:
+            err_lbl = QLabel(f"{err_msg}\n\n💡 提示：请粘贴抖音、小红书、快手、B站或 TikTok 的分享链接。")
+            err_lbl.setStyleSheet("color: #fab387; font-size: 13px; line-height: 1.5; border: none;")
+            err_lbl.setWordWrap(True)
+            err_vbox.addWidget(err_lbl)
+        else:
+            err_lbl = QLabel(f"解析出现问题：\n{err_msg}\n\n你可以点击下方【🛠️ 一键修复并重试】，自动检测最快网络通道并同步最新解析协议密钥。")
+            err_lbl.setStyleSheet("color: #f38ba8; font-size: 13px; line-height: 1.5; border: none;")
+            err_lbl.setWordWrap(True)
+            err_vbox.addWidget(err_lbl)
 
-        fix_retry_btn = QPushButton("🛠️ 一键修复解析通道并重试")
-        fix_retry_btn.setCursor(Qt.PointingHandCursor)
-        fix_retry_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #fab387;
-                color: #1e1e2e;
-                font-weight: bold;
-                font-size: 13px;
-                border-radius: 8px;
-                padding: 9px 18px;
-            }
-            QPushButton:hover {
-                background-color: #f9e2af;
-            }
-        """)
-        fix_retry_btn.clicked.connect(self.run_self_repair)
-        err_vbox.addWidget(fix_retry_btn, 0, Qt.AlignLeft)
+            fix_retry_btn = QPushButton("🛠️ 一键修复解析通道并重试")
+            fix_retry_btn.setCursor(Qt.PointingHandCursor)
+            fix_retry_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #fab387;
+                    color: #1e1e2e;
+                    font-weight: bold;
+                    font-size: 13px;
+                    border-radius: 8px;
+                    padding: 9px 18px;
+                }
+                QPushButton:hover {
+                    background-color: #f9e2af;
+                }
+            """)
+            fix_retry_btn.clicked.connect(self.run_self_repair)
+            err_vbox.addWidget(fix_retry_btn, 0, Qt.AlignLeft)
 
         self.scroll_layout.addWidget(err_box)
         self.scroll_layout.addStretch(1)
