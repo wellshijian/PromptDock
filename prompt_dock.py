@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -4257,8 +4257,8 @@ class MediaExtractorDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("视频无水印提取")
         self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.WindowCloseButtonHint | Qt.WindowMinMaxButtonsHint)
-        self.resize(640, 540)
-        self.setMinimumSize(540, 420)
+        self.resize(780, 620)
+        self.setMinimumSize(680, 500)
         self.setStyleSheet("""
             QDialog {
                 background-color: #1e1e2e;
@@ -4468,7 +4468,7 @@ class MediaExtractorDialog(QDialog):
         batch_vbox.setSpacing(8)
 
         self.batch_text_edit = QTextEdit()
-        self.batch_text_edit.setFixedHeight(96)
+        self.batch_text_edit.setFixedHeight(82)
         self.batch_text_edit.setPlaceholderText("在此一次性粘贴多条分享口令或链接（每行一条，或直接粘贴多段混杂文字，系统会自动提取所有网址并去重）...")
         self.batch_text_edit.setStyleSheet("""
             QTextEdit {
@@ -4500,32 +4500,36 @@ class MediaExtractorDialog(QDialog):
         append_paste_btn = QPushButton("📋 追加粘贴")
         append_paste_btn.setCursor(Qt.PointingHandCursor)
         append_paste_btn.setToolTip("将剪贴板内容追加到下方新的一行，方便连续复制多条后一起解析")
-        append_paste_btn.setStyleSheet("padding: 7px 12px; font-size: 12px;")
+        append_paste_btn.setStyleSheet("padding: 7px 11px; font-size: 12px;")
+        append_paste_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         append_paste_btn.clicked.connect(self.append_paste_to_batch)
         batch_action_row.addWidget(append_paste_btn)
 
         batch_clear_btn = QPushButton("✕ 清空")
         batch_clear_btn.setCursor(Qt.PointingHandCursor)
-        batch_clear_btn.setStyleSheet("background-color: #3b3d54; color: #f38ba8; padding: 7px 12px; font-size: 12px; border-radius: 8px;")
+        batch_clear_btn.setStyleSheet("background-color: #3b3d54; color: #f38ba8; padding: 7px 11px; font-size: 12px; border-radius: 8px;")
+        batch_clear_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         batch_clear_btn.clicked.connect(self.clear_all)
         batch_action_row.addWidget(batch_clear_btn)
 
-        self.batch_copy_links_btn = QPushButton("🔗 复制全部直链")
+        self.batch_copy_links_btn = QPushButton("🔗 复制直链")
         self.batch_copy_links_btn.setCursor(Qt.PointingHandCursor)
-        self.batch_copy_links_btn.setStyleSheet("padding: 7px 12px; font-size: 12px;")
+        self.batch_copy_links_btn.setStyleSheet("padding: 7px 11px; font-size: 12px;")
+        self.batch_copy_links_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.batch_copy_links_btn.clicked.connect(self.batch_copy_all_direct_urls)
         self.batch_copy_links_btn.setEnabled(False)
         batch_action_row.addWidget(self.batch_copy_links_btn)
 
-        self.batch_dl_all_btn = QPushButton("📥 一键下载全部")
+        self.batch_dl_all_btn = QPushButton("📥 下载全部")
         self.batch_dl_all_btn.setCursor(Qt.PointingHandCursor)
+        self.batch_dl_all_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.batch_dl_all_btn.setStyleSheet("""
             QPushButton {
                 background-color: #22c55e;
                 color: #ffffff;
                 font-weight: bold;
                 font-size: 12px;
-                padding: 7px 14px;
+                padding: 7px 12px;
                 border-radius: 8px;
             }
             QPushButton:hover {
@@ -4540,75 +4544,16 @@ class MediaExtractorDialog(QDialog):
         self.batch_dl_all_btn.setEnabled(False)
         batch_action_row.addWidget(self.batch_dl_all_btn)
 
-        self.batch_parse_btn = QPushButton("⚡ 开始批量解析")
+        self.batch_parse_btn = QPushButton("⚡ 开始解析")
         self.batch_parse_btn.setObjectName("PrimaryBtn")
         self.batch_parse_btn.setCursor(Qt.PointingHandCursor)
-        self.batch_parse_btn.setStyleSheet("padding: 7px 16px; font-size: 12px;")
+        self.batch_parse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.batch_parse_btn.setStyleSheet("padding: 7px 14px; font-size: 12px;")
         self.batch_parse_btn.clicked.connect(self.start_batch_parse)
         batch_action_row.addWidget(self.batch_parse_btn)
 
         batch_vbox.addLayout(batch_action_row)
         main_layout.addWidget(self.batch_input_widget)
-
-        # 默认下载位置栏
-        dl_bar = QFrame()
-        dl_bar.setStyleSheet("""
-            QFrame {
-                background-color: #26283b;
-                border: 1px solid #35374d;
-                border-radius: 8px;
-            }
-            QLabel {
-                border: none;
-                background: transparent;
-            }
-            QCheckBox {
-                color: #cdd6f4;
-                font-size: 12px;
-                spacing: 6px;
-                background: transparent;
-            }
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-                border-radius: 3px;
-                border: 1px solid #585b70;
-                background: #1e1e2e;
-            }
-            QCheckBox::indicator:checked {
-                background: #6c5ce7;
-                border-color: #6c5ce7;
-            }
-        """)
-        dl_bar_layout = QHBoxLayout(dl_bar)
-        dl_bar_layout.setContentsMargins(10, 6, 10, 6)
-        dl_bar_layout.setSpacing(8)
-
-        self.auto_save_cb = QCheckBox("直接保存到默认位置:")
-        self.auto_save_cb.setCursor(Qt.PointingHandCursor)
-        self.auto_save_cb.setChecked(bool(load_settings().get("media_auto_save", True)))
-        self.auto_save_cb.toggled.connect(self._on_toggle_auto_save)
-        dl_bar_layout.addWidget(self.auto_save_cb)
-
-        self.dl_dir_label = QLabel()
-        self.dl_dir_label.setStyleSheet("color: #89b4fa; font-size: 12px;")
-        self.dl_dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        dl_bar_layout.addWidget(self.dl_dir_label, 1)
-
-        change_dir_btn = QPushButton("📂 更改位置")
-        change_dir_btn.setCursor(Qt.PointingHandCursor)
-        change_dir_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
-        change_dir_btn.clicked.connect(self._choose_default_download_dir)
-        dl_bar_layout.addWidget(change_dir_btn)
-
-        open_dir_btn = QPushButton("📁 打开")
-        open_dir_btn.setCursor(Qt.PointingHandCursor)
-        open_dir_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
-        open_dir_btn.clicked.connect(self._open_default_download_dir)
-        dl_bar_layout.addWidget(open_dir_btn)
-
-        main_layout.addWidget(dl_bar)
-        self._refresh_download_dir_ui()
 
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #fab387; font-size: 12px; min-height: 16px;")
@@ -4637,6 +4582,47 @@ class MediaExtractorDialog(QDialog):
         self.empty_tip.setAlignment(Qt.AlignCenter)
         self.empty_tip.setStyleSheet("color: #6c7086; font-size: 13px; margin-top: 40px;")
         self.scroll_layout.addWidget(self.empty_tip)
+
+        # 底部极简低调的默认下载位置栏
+        footer_bar = QHBoxLayout()
+        footer_bar.setContentsMargins(2, 0, 2, 0)
+        footer_bar.setSpacing(6)
+
+        self.auto_save_cb = QCheckBox("直接保存至")
+        self.auto_save_cb.setCursor(Qt.PointingHandCursor)
+        self.auto_save_cb.setChecked(bool(load_settings().get("media_auto_save", True)))
+        self.auto_save_cb.setStyleSheet("""
+            QCheckBox { color: #7f849c; font-size: 11px; spacing: 5px; background: transparent; }
+            QCheckBox::indicator { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #45475a; background: transparent; }
+            QCheckBox::indicator:checked { background: #6c5ce7; border-color: #6c5ce7; }
+        """)
+        self.auto_save_cb.toggled.connect(self._on_toggle_auto_save)
+        footer_bar.addWidget(self.auto_save_cb)
+
+        self.dl_dir_label = QPushButton()
+        self.dl_dir_label.setCursor(Qt.PointingHandCursor)
+        self.dl_dir_label.setFlat(True)
+        self.dl_dir_label.setStyleSheet("""
+            QPushButton { background: transparent; border: none; color: #7f849c; font-size: 11px; padding: 0; text-align: left; }
+            QPushButton:hover { color: #a6adc8; text-decoration: underline; }
+        """)
+        self.dl_dir_label.clicked.connect(self._open_default_download_dir)
+        footer_bar.addWidget(self.dl_dir_label)
+
+        footer_bar.addStretch(1)
+
+        change_dir_btn = QPushButton("更改目录")
+        change_dir_btn.setCursor(Qt.PointingHandCursor)
+        change_dir_btn.setFlat(True)
+        change_dir_btn.setStyleSheet("""
+            QPushButton { background: transparent; border: none; color: #7f849c; font-size: 11px; padding: 2px 6px; }
+            QPushButton:hover { color: #cdd6f4; }
+        """)
+        change_dir_btn.clicked.connect(self._choose_default_download_dir)
+        footer_bar.addWidget(change_dir_btn)
+
+        main_layout.addLayout(footer_bar)
+        self._refresh_download_dir_ui()
 
         self._refresh_mode_styles()
 
@@ -5410,20 +5396,21 @@ class MediaExtractorDialog(QDialog):
 
     def _create_batch_row_card(self, idx: int, url: str):
         card = QFrame()
-        card.setStyleSheet("background-color: #2b2d42; border: 1px solid #3b3d54; border-radius: 10px; padding: 10px 12px;")
+        card.setObjectName("BatchRowCard")
+        card.setStyleSheet("#BatchRowCard { background-color: #2b2d42; border: 1px solid #3b3d54; border-radius: 10px; }")
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
 
         idx_lbl = QLabel(f"#{idx + 1:02d}")
-        idx_lbl.setStyleSheet("color: #7f849c; font-size: 12px; font-weight: bold; border: none;")
-        idx_lbl.setFixedWidth(30)
+        idx_lbl.setStyleSheet("color: #7f849c; font-size: 12px; font-weight: bold; border: none; background: transparent;")
+        idx_lbl.setFixedWidth(28)
         layout.addWidget(idx_lbl)
 
         badge = QLabel("⏳ 等待解析")
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedWidth(78)
-        badge.setStyleSheet("background-color: rgba(147,153,178,0.18); color: #a6adc8; border-radius: 5px; padding: 3px 6px; font-size: 11px; font-weight: bold; border: none;")
+        badge.setFixedWidth(80)
+        badge.setStyleSheet("background-color: rgba(147,153,178,0.18); color: #a6adc8; border-radius: 5px; padding: 4px 6px; font-size: 11px; font-weight: bold; border: none;")
         layout.addWidget(badge)
 
         title_lbl = QLabel(url)

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.9",
-  "notes": "视频提取器新增默认下载位置设置，支持一键直接保存与重名自动编号",
-  "sha256": "7a8cbe82c56edef117fedf5acee115faca435190fd07a2b79a2fbde6a13b9003",
+  "version": "1.0.10",
+  "notes": "优化视频提取器界面布局，修复按钮文字及序号裁切问题，默认下载位置移至底部极简栏",
+  "sha256": "fa7ef9bce018ae3561d1469ed52789fe13943720870fbdd085bdd50c0b97764d",
   "download_url": "https://github.com/wellshijian/PromptDock/releases/latest/download/PromptDock.exe",
-  "published_at": "2026-11-19T10:19:02+08:00"
+  "published_at": "2026-11-19T10:34:22+08:00"
 }
