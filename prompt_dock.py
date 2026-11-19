@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "PromptDock"
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 GITHUB_REPO = "wellshijian/PromptDock"
 GITHUB_MIRRORS = [
     ("极速 CDN 节点", "https://cdn.gh-proxy.com/"),
@@ -308,6 +308,8 @@ DEFAULT_SETTINGS = {
     "cloud_nickname": "",
     "cloud_avatar": "",
     "last_sync_time": 0,
+    "media_download_dir": "",
+    "media_auto_save": True,
 }
 
 
@@ -4548,6 +4550,66 @@ class MediaExtractorDialog(QDialog):
         batch_vbox.addLayout(batch_action_row)
         main_layout.addWidget(self.batch_input_widget)
 
+        # 默认下载位置栏
+        dl_bar = QFrame()
+        dl_bar.setStyleSheet("""
+            QFrame {
+                background-color: #26283b;
+                border: 1px solid #35374d;
+                border-radius: 8px;
+            }
+            QLabel {
+                border: none;
+                background: transparent;
+            }
+            QCheckBox {
+                color: #cdd6f4;
+                font-size: 12px;
+                spacing: 6px;
+                background: transparent;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border-radius: 3px;
+                border: 1px solid #585b70;
+                background: #1e1e2e;
+            }
+            QCheckBox::indicator:checked {
+                background: #6c5ce7;
+                border-color: #6c5ce7;
+            }
+        """)
+        dl_bar_layout = QHBoxLayout(dl_bar)
+        dl_bar_layout.setContentsMargins(10, 6, 10, 6)
+        dl_bar_layout.setSpacing(8)
+
+        self.auto_save_cb = QCheckBox("直接保存到默认位置:")
+        self.auto_save_cb.setCursor(Qt.PointingHandCursor)
+        self.auto_save_cb.setChecked(bool(load_settings().get("media_auto_save", True)))
+        self.auto_save_cb.toggled.connect(self._on_toggle_auto_save)
+        dl_bar_layout.addWidget(self.auto_save_cb)
+
+        self.dl_dir_label = QLabel()
+        self.dl_dir_label.setStyleSheet("color: #89b4fa; font-size: 12px;")
+        self.dl_dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        dl_bar_layout.addWidget(self.dl_dir_label, 1)
+
+        change_dir_btn = QPushButton("📂 更改位置")
+        change_dir_btn.setCursor(Qt.PointingHandCursor)
+        change_dir_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
+        change_dir_btn.clicked.connect(self._choose_default_download_dir)
+        dl_bar_layout.addWidget(change_dir_btn)
+
+        open_dir_btn = QPushButton("📁 打开")
+        open_dir_btn.setCursor(Qt.PointingHandCursor)
+        open_dir_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
+        open_dir_btn.clicked.connect(self._open_default_download_dir)
+        dl_bar_layout.addWidget(open_dir_btn)
+
+        main_layout.addWidget(dl_bar)
+        self._refresh_download_dir_ui()
+
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #fab387; font-size: 12px; min-height: 16px;")
         main_layout.addWidget(self.status_label)
@@ -5148,10 +5210,81 @@ class MediaExtractorDialog(QDialog):
         self.status_label.setText(f"✓ {tip}")
         self.status_label.setStyleSheet("color: #a6e3a1; font-size: 12px;")
 
+    def _get_default_download_dir(self) -> str:
+        s = load_settings()
+        d = str(s.get("media_download_dir") or "").strip()
+        if not d or not os.path.isdir(d):
+            downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+            d = downloads if os.path.isdir(downloads) else os.path.expanduser("~")
+            try:
+                os.makedirs(d, exist_ok=True)
+            except Exception:
+                pass
+        return d
+
+    def _refresh_download_dir_ui(self):
+        dl_dir = self._get_default_download_dir()
+        display = dl_dir if len(dl_dir) <= 44 else "..." + dl_dir[-41:]
+        self.dl_dir_label.setText(display)
+        self.dl_dir_label.setToolTip(dl_dir)
+
+    def _on_toggle_auto_save(self, checked: bool):
+        s = load_settings()
+        s["media_auto_save"] = bool(checked)
+        save_settings(s)
+
+    def _choose_default_download_dir(self):
+        cur = self._get_default_download_dir()
+        folder = QFileDialog.getExistingDirectory(self, "选择默认下载文件夹", cur)
+        if not folder:
+            return
+        s = load_settings()
+        s["media_download_dir"] = folder
+        s["media_auto_save"] = True
+        save_settings(s)
+        self.auto_save_cb.setChecked(True)
+        self._refresh_download_dir_ui()
+        self.status_label.setText(f"✓ 默认下载位置已设为: {folder}")
+        self.status_label.setStyleSheet("color: #a6e3a1; font-size: 12px;")
+
+    def _open_default_download_dir(self):
+        dl_dir = self._get_default_download_dir()
+        try:
+            os.makedirs(dl_dir, exist_ok=True)
+            os.startfile(dl_dir)
+        except Exception as e:
+            QMessageBox.warning(self, "打开失败", f"无法打开文件夹：\n{e}")
+
+    @staticmethod
+    def _unique_save_path(folder: str, filename: str) -> str:
+        base, ext = os.path.splitext(filename)
+        candidate = os.path.join(folder, filename)
+        idx = 1
+        while os.path.exists(candidate):
+            candidate = os.path.join(folder, f"{base} ({idx}){ext}")
+            idx += 1
+        return candidate
+
+    def _resolve_save_file_path(self, default_name: str, dialog_title: str, file_filter: str) -> str:
+        if self.auto_save_cb.isChecked():
+            folder = self._get_default_download_dir()
+            os.makedirs(folder, exist_ok=True)
+            return self._unique_save_path(folder, default_name)
+        initial = os.path.join(self._get_default_download_dir(), default_name)
+        save_path, _ = QFileDialog.getSaveFileName(self, dialog_title, initial, file_filter)
+        return save_path
+
+    def _resolve_save_folder(self, dialog_title: str) -> str:
+        if self.auto_save_cb.isChecked():
+            folder = self._get_default_download_dir()
+            os.makedirs(folder, exist_ok=True)
+            return folder
+        return QFileDialog.getExistingDirectory(self, dialog_title, self._get_default_download_dir())
+
     def download_video(self, url: str, title: str):
         safe_title = sanitize_filename(title, 35)
         default_name = f"{safe_title}.mp4"
-        save_path, _ = QFileDialog.getSaveFileName(self, "保存无水印视频", default_name, "MP4 视频 (*.mp4)")
+        save_path = self._resolve_save_file_path(default_name, "保存无水印视频", "MP4 视频 (*.mp4)")
         if not save_path:
             return
 
@@ -5174,7 +5307,7 @@ class MediaExtractorDialog(QDialog):
             base = default_name
         safe_base = sanitize_filename(base, 35)
         safe_name = f"{safe_base}{ext}"
-        save_path, _ = QFileDialog.getSaveFileName(self, "保存文件", safe_name, "所有文件 (*.*)")
+        save_path = self._resolve_save_file_path(safe_name, "保存文件", "所有文件 (*.*)")
         if not save_path:
             return
 
@@ -5190,7 +5323,7 @@ class MediaExtractorDialog(QDialog):
         self.dl_worker.start()
 
     def batch_download_images(self, urls: list):
-        folder = QFileDialog.getExistingDirectory(self, "选择保存所有图片的文件夹")
+        folder = self._resolve_save_folder("选择保存所有图片的文件夹")
         if not folder:
             return
 
@@ -5445,7 +5578,7 @@ class MediaExtractorDialog(QDialog):
     def batch_download_all_parsed(self):
         if not self.batch_results:
             return
-        folder = QFileDialog.getExistingDirectory(self, "选择批量保存无水印视频/图集的文件夹")
+        folder = self._resolve_save_folder("选择批量保存无水印视频/图集的文件夹")
         if not folder:
             return
 
